@@ -12,6 +12,8 @@ class SnakeGame {
         // Touch swipe controls
         this.touchStartX = null;
         this.touchStartY = null;
+        this.touchStartTime = null;
+        this.swipeIndicator = null;
         this.setupTouchControls();
         
         // Adjust canvas size for mobile
@@ -1751,45 +1753,105 @@ class SnakeGame {
 
     setupTouchControls() {
         // Setup swipe controls
+        this.touchStartX = null;
+        this.touchStartY = null;
+        this.touchStartTime = null;
+        this.swipeIndicator = null;
+        
+        // Создаем индикатор свайпа
+        this.createSwipeIndicator();
+
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
             this.touchStartX = touch.clientX;
             this.touchStartY = touch.clientY;
+            this.touchStartTime = Date.now();
+            
+            // Показываем индикатор свайпа
+            if (this.swipeIndicator) {
+                this.swipeIndicator.style.left = `${touch.clientX}px`;
+                this.swipeIndicator.style.top = `${touch.clientY}px`;
+                this.swipeIndicator.style.opacity = '1';
+            }
         });
 
         this.canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
+            if (!this.touchStartX || !this.touchStartY) return;
+
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - this.touchStartX;
+            const deltaY = touch.clientY - this.touchStartY;
+            
+            // Обновляем позицию индикатора свайпа
+            if (this.swipeIndicator) {
+                const angle = Math.atan2(deltaY, deltaX);
+                const distance = Math.min(Math.sqrt(deltaX * deltaX + deltaY * deltaY), 50);
+                const translateX = Math.cos(angle) * distance;
+                const translateY = Math.sin(angle) * distance;
+                
+                this.swipeIndicator.style.transform = `translate(${translateX}px, ${translateY}px)`;
+            }
+
+            // Определяем направление свайпа на лету для более быстрой реакции
+            const minSwipeDistance = 20; // Уменьшенное минимальное расстояние для свайпа
+            
+            if (Math.abs(deltaX) > minSwipeDistance || Math.abs(deltaY) > minSwipeDistance) {
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    // Горизонтальный свайп
+                    if (deltaX > 0) {
+                        this.handleDirectionChange('right');
+                    } else {
+                        this.handleDirectionChange('left');
+                    }
+                } else {
+                    // Вертикальный свайп
+                    if (deltaY > 0) {
+                        this.handleDirectionChange('down');
+                    } else {
+                        this.handleDirectionChange('up');
+                    }
+                }
+                
+                // Обновляем начальную позицию для следующего свайпа
+                this.touchStartX = touch.clientX;
+                this.touchStartY = touch.clientY;
+            }
         });
 
         this.canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
-            if (!this.touchStartX || !this.touchStartY) return;
-
-            const touch = e.changedTouches[0];
-            const deltaX = touch.clientX - this.touchStartX;
-            const deltaY = touch.clientY - this.touchStartY;
-
-            // Определяем направление свайпа
-            if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                // Горизонтальный свайп
-                if (deltaX > 30) {
-                    this.handleDirectionChange('right');
-                } else if (deltaX < -30) {
-                    this.handleDirectionChange('left');
-                }
-            } else {
-                // Вертикальный свайп
-                if (deltaY > 30) {
-                    this.handleDirectionChange('down');
-                } else if (deltaY < -30) {
-                    this.handleDirectionChange('up');
-                }
+            
+            // Скрываем индикатор свайпа
+            if (this.swipeIndicator) {
+                this.swipeIndicator.style.opacity = '0';
+                this.swipeIndicator.style.transform = 'translate(0, 0)';
             }
 
             this.touchStartX = null;
             this.touchStartY = null;
+            this.touchStartTime = null;
         });
+    }
+
+    createSwipeIndicator() {
+        // Создаем визуальный индикатор свайпа
+        this.swipeIndicator = document.createElement('div');
+        this.swipeIndicator.style.cssText = `
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(0, 255, 255, 0.2);
+            border: 2px solid rgba(0, 255, 255, 0.5);
+            pointer-events: none;
+            transition: opacity 0.3s;
+            opacity: 0;
+            z-index: 1000;
+            transform: translate(-50%, -50%);
+        `;
+        document.body.appendChild(this.swipeIndicator);
     }
 
     handleDirectionChange(newDirection) {
