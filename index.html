@@ -143,38 +143,78 @@
         .mobile-controls {
             display: none;
             position: fixed;
-            bottom: 50px;
+            bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
             width: 180px;
             height: 180px;
+            z-index: 100;
         }
 
         .mobile-controls button {
             position: absolute;
-            width: 50px;
-            height: 50px;
-            background: rgba(0, 255, 255, 0.2);
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 255, 255, 0.15);
             border: 2px solid rgba(0, 255, 255, 0.5);
-            border-radius: 10px;
+            border-radius: 50%;
             color: #00ffff;
-            font-size: 20px;
+            font-size: 24px;
             display: flex;
             justify-content: center;
             align-items: center;
             cursor: pointer;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
         }
 
         .mobile-controls button:active {
             background: rgba(0, 255, 255, 0.4);
+            transform: scale(0.95);
+            box-shadow: 0 0 25px rgba(0, 255, 255, 0.4);
         }
 
-        #btnUp { top: 0; left: 65px; }
-        #btnDown { bottom: 0; left: 65px; }
-        #btnLeft { top: 65px; left: 0; }
-        #btnRight { top: 65px; right: 0; }
+        #btnUp { 
+            top: 0; 
+            left: 60px;
+            border-radius: 30px 30px 10px 10px;
+        }
+        #btnDown { 
+            bottom: 0; 
+            left: 60px;
+            border-radius: 10px 10px 30px 30px;
+        }
+        #btnLeft { 
+            top: 60px; 
+            left: 0;
+            border-radius: 30px 10px 10px 30px;
+        }
+        #btnRight { 
+            top: 60px; 
+            right: 0;
+            border-radius: 10px 30px 30px 10px;
+        }
+
+        .mobile-controls::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 255, 255, 0.1);
+            border-radius: 50%;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            pointer-events: none;
+        }
+
+        .game-over .mobile-controls {
+            display: none !important;
+        }
 
         @media (max-width: 768px) {
             .mobile-controls {
@@ -195,6 +235,10 @@
                 max-width: 400px;
                 max-height: 400px;
             }
+
+            .game-over {
+                z-index: 1000;
+            }
         }
     </style>
 </head>
@@ -209,12 +253,12 @@
             <button onclick="game.restart()">НАЧАТЬ ЗАНОВО</button>
         </div>
         <div class="controls">ИСПОЛЬЗУЙТЕ СТРЕЛКИ ИЛИ WASD ДЛЯ ДВИЖЕНИЯ</div>
-        <div class="mobile-controls">
-            <button id="btnUp">↑</button>
-            <button id="btnDown">↓</button>
-            <button id="btnLeft">←</button>
-            <button id="btnRight">→</button>
-        </div>
+    </div>
+    <div class="mobile-controls">
+        <button id="btnUp">⯅</button>
+        <button id="btnDown">⯆</button>
+        <button id="btnLeft">⯇</button>
+        <button id="btnRight">⯈</button>
     </div>
     <script src="game.js"></script>
     <script>

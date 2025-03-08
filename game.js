@@ -1740,14 +1740,50 @@ class SnakeGame {
             'btnRight': 'right'
         };
 
+        // Создаем контейнер для мобильного управления вне game-container
+        this.mobileControls = document.querySelector('.mobile-controls');
+
         Object.entries(buttons).forEach(([id, direction]) => {
             const button = document.getElementById(id);
             if (button) {
-                button.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    this.handleDirectionChange(direction);
+                // Добавляем обработчики для всех типов событий
+                ['touchstart', 'touchend', 'touchcancel'].forEach(eventType => {
+                    button.addEventListener(eventType, (e) => {
+                        e.preventDefault();
+                        if (eventType === 'touchstart') {
+                            // Визуальный эффект при нажатии
+                            button.style.transform = 'scale(0.95)';
+                            button.style.background = 'rgba(0, 255, 255, 0.4)';
+                            this.handleDirectionChange(direction);
+                        } else {
+                            // Возвращаем исходный вид при отпускании
+                            button.style.transform = 'scale(1)';
+                            button.style.background = 'rgba(0, 255, 255, 0.15)';
+                        }
+                    });
                 });
             }
+        });
+
+        // Обработчик для скрытия/показа управления при game over
+        const gameOverObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.target.style.display === 'block') {
+                    // Прячем управление при game over
+                    this.mobileControls.style.display = 'none';
+                } else if (mutation.target.style.display === 'none') {
+                    // Показываем управление при возобновлении игры
+                    if (window.innerWidth <= 768) {
+                        this.mobileControls.style.display = 'block';
+                    }
+                }
+            });
+        });
+
+        // Начинаем наблюдение за изменениями экрана game over
+        gameOverObserver.observe(this.gameOverElement, {
+            attributes: true,
+            attributeFilter: ['style']
         });
     }
 
@@ -1762,6 +1798,8 @@ class SnakeGame {
         this.createSwipeIndicator();
 
         this.canvas.addEventListener('touchstart', (e) => {
+            if (this.gameOver) return; // Игнорируем свайпы при game over
+            
             e.preventDefault();
             const touch = e.touches[0];
             this.touchStartX = touch.clientX;
@@ -1777,6 +1815,8 @@ class SnakeGame {
         });
 
         this.canvas.addEventListener('touchmove', (e) => {
+            if (this.gameOver) return; // Игнорируем свайпы при game over
+            
             e.preventDefault();
             if (!this.touchStartX || !this.touchStartY) return;
 
@@ -1792,10 +1832,17 @@ class SnakeGame {
                 const translateY = Math.sin(angle) * distance;
                 
                 this.swipeIndicator.style.transform = `translate(${translateX}px, ${translateY}px)`;
+                
+                // Добавляем направляющую линию
+                this.swipeIndicator.style.background = `
+                    linear-gradient(${angle}rad, 
+                    rgba(0, 255, 255, 0.4), 
+                    rgba(0, 255, 255, 0.1))
+                `;
             }
 
             // Определяем направление свайпа на лету для более быстрой реакции
-            const minSwipeDistance = 20; // Уменьшенное минимальное расстояние для свайпа
+            const minSwipeDistance = 15; // Уменьшенное минимальное расстояние для свайпа
             
             if (Math.abs(deltaX) > minSwipeDistance || Math.abs(deltaY) > minSwipeDistance) {
                 if (Math.abs(deltaX) > Math.abs(deltaY)) {
@@ -1827,6 +1874,7 @@ class SnakeGame {
             if (this.swipeIndicator) {
                 this.swipeIndicator.style.opacity = '0';
                 this.swipeIndicator.style.transform = 'translate(0, 0)';
+                this.swipeIndicator.style.background = 'rgba(0, 255, 255, 0.2)';
             }
 
             this.touchStartX = null;
@@ -1850,6 +1898,8 @@ class SnakeGame {
             opacity: 0;
             z-index: 1000;
             transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+            backdrop-filter: blur(5px);
         `;
         document.body.appendChild(this.swipeIndicator);
     }
