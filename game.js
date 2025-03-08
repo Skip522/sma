@@ -74,10 +74,12 @@ class SnakeGame {
         ];
         this.adModal = null;
         this.youtubePlayer = null;
-        this.adRevivalsUsed = 0;
         this.maxAdRevivals = 3;
         this.pendingAdRevival = false;
         this.deathCount = 0;
+        
+        // Initialize ad revivals from localStorage or set to 0
+        this.adRevivalsUsed = parseInt(localStorage.getItem('snakeAdRevivals')) || 0;
         
         // Load YouTube API
         this.loadYouTubeAPI();
@@ -405,8 +407,10 @@ class SnakeGame {
             this.menuElement.remove();
         }
         
-        // Initialize game components
+        // Initialize game components and reset counters
         this.deathCount = 0;
+        this.adRevivalsUsed = 0;
+        localStorage.setItem('snakeAdRevivals', '0'); // Reset ad counter in localStorage
         
         // For large grids, adjust settings for better performance
         if (size >= 40) {
@@ -1148,8 +1152,9 @@ class SnakeGame {
             return;
         }
         
-        // Increment the ad revival counter
+        // Increment the ad revival counter and save to localStorage
         this.adRevivalsUsed++;
+        localStorage.setItem('snakeAdRevivals', this.adRevivalsUsed.toString());
         
         // Select a random ad video ID
         const randomAdIndex = Math.floor(Math.random() * this.adVideoIds.length);
@@ -1434,11 +1439,10 @@ class SnakeGame {
     }
 
     restart() {
-        // Сбрасываем счетчики только при полном рестарте
-        if (this.gameOver) {
-            this.adRevivalsUsed = 0;
-            this.deathCount = 0;
-        }
+        // Всегда сбрасываем счетчики при полном рестарте
+        this.adRevivalsUsed = 0;
+        localStorage.setItem('snakeAdRevivals', '0'); // Reset ad counter in localStorage
+        this.deathCount = 0;
         
         // Cancel any existing animation frame
         if (this.animationFrameId) {
