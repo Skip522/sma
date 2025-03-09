@@ -1,1957 +1,667 @@
 class SnakeGame {
-    constructor() {
-        this.canvas = document.getElementById('gameCanvas');
-        this.ctx = this.canvas.getContext('2d', { alpha: false });
-        this.scoreElement = document.getElementById('score');
-        this.highScoreElement = document.getElementById('highScore');
-        this.gameOverElement = document.getElementById('gameOver');
-        
-        // Add speed effect timer element
-        this.speedEffectTimer = document.createElement('div');
-        this.speedEffectTimer.style.cssText = `
-            position: absolute;
-            top: -60px;
-            left: 0;
-            right: 0;
-            color: #ffff00;
-            text-align: center;
-            font-size: 14px;
-            text-shadow: 0 0 10px rgba(255, 255, 0, 0.7);
-            display: none;
-        `;
-        document.querySelector('.game-container').appendChild(this.speedEffectTimer);
-        
-        // Add slow effect timer element
-        this.slowEffectTimer = document.createElement('div');
-        this.slowEffectTimer.style.cssText = `
-            position: absolute;
-            top: -30px;
-            left: 0;
-            right: 0;
-            color: #0000ff;
-            text-align: center;
-            font-size: 14px;
-            text-shadow: 0 0 10px rgba(0, 0, 255, 0.7);
-            display: none;
-        `;
-        document.querySelector('.game-container').appendChild(this.slowEffectTimer);
-        
-        // Mobile touch controls
-        this.setupMobileControls();
-        
-        // Touch swipe controls
-        this.touchStartX = null;
-        this.touchStartY = null;
-        this.touchStartTime = null;
-        this.swipeIndicator = null;
-        this.setupTouchControls();
-        
-        // Adjust canvas size for mobile
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-        
-        // Полностью отключаем все эффекты наклона
-        document.addEventListener('mousemove', () => {
-            this.canvas.style.transform = 'none';
-            this.canvas.style.perspective = 'none';
-            this.canvas.style.transform = 'translate(0, 0)';
-        });
-        
-        // Принудительно устанавливаем стили
-        this.canvas.style.transform = 'none';
-        this.canvas.style.perspective = 'none';
-        this.canvas.style.transition = 'none';
-        this.canvas.style.transformStyle = 'flat';
-        
-        // Game settings
-        this.tileSize = 20;
-        this.gridSize = 20;
-        this.maxSpeed = false;
-        this.inputBuffer = null;
-        this.inputDelay = 30;
-        this.lastInputTime = 0;
-        this.gameRunning = false;
-        this.startPosition = { x: 5, y: 5 };
-        this.baseInterval = 150;
-        this.fpsInterval = 1000 / 60;
-        
-        // Оптимизация для мобильных устройств
-        this.isMobile = window.innerWidth <= 768;
-        this.maxParticles = this.isMobile ? 10 : 30;
-        
-        // Crystal system
+    constructor(canvas, scoreElement, highScoreElement, gameOverElement) {
+        // Initialize canvas and UI elements
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d', { alpha: false });
+        this.scoreElement = scoreElement;
+        this.highScoreElement = highScoreElement;
+        this.gameOverElement = gameOverElement;
+
+        // Set up game dimensions
+        this.setupGameDimensions();
+
+        // Initialize game state
+        this.snake = [
+            {x: Math.floor(this.gridSize/2), y: Math.floor(this.gridSize/2)},
+            {x: Math.floor(this.gridSize/2)-1, y: Math.floor(this.gridSize/2)},
+            {x: Math.floor(this.gridSize/2)-2, y: Math.floor(this.gridSize/2)}
+        ];
+        this.direction = {x: 1, y: 0};
+        this.nextDirection = {x: 1, y: 0};
+        this.food = this.generateFood();
+        this.crystal = this.generateCrystal();
+        this.score = 0;
         this.crystals = parseInt(localStorage.getItem('snakeCrystals')) || 0;
-        this.crystalElement = document.createElement('div');
-        this.crystalElement.id = 'crystals';
-        this.crystalElement.style.cssText = `
-            position: absolute;
-            top: -90px;
-            left: 0;
-            right: 0;
-            color: #9932CC;
-            text-align: center;
-            font-size: 16px;
-            text-shadow: 0 0 10px rgba(153, 50, 204, 0.7);
-        `;
-        this.crystalElement.textContent = `КРИСТАЛЛЫ: ${this.crystals}`;
-        document.querySelector('.game-container').appendChild(this.crystalElement);
+        this.highScore = parseInt(localStorage.getItem('snakeHighScore')) || 0;
+        this.gameSpeed = 200;
+        this.lastRenderTime = 0;
+        this.gameOver = false;
         
-        // Ad system
-        this.adVideoIds = [
-            "f_QMb-Ba9YI",
-            "TPzfGKFeu_c",
-            "f_il9BwhAd0"
-        ];
-        this.adModal = null;
-        this.youtubePlayer = null;
-        this.maxAdRevivals = 3;
-        this.pendingAdRevival = false;
-        this.deathCount = 0;
+        // Animation properties
+        this.moveProgress = 0;
+        this.currentAngle = 0;
+        this.targetAngle = 0;
+        this.rotationSpeed = 0.08;
+        this.smoothness = 0.15;
+        this.segmentSpacing = 0.15;
+        this.trail = [];
+        this.maxTrailLength = 8;
+        this.lastPos = null;
         
-        // Reset ad revivals counter on first load
-        this.adRevivalsUsed = 0;
-        localStorage.setItem('snakeAdRevivals', '0');
+        // Add ad modal
+        this.createAdModal();
+
+        // Display initial high score
+        this.highScoreElement.textContent = this.highScore;
+
+        // Create UI elements regardless of device type
+        this.createMenuButton();
+        this.createCrystalCounter();
         
-        // Load YouTube API
-        this.loadYouTubeAPI();
+        // Initialize controls
+        this.initializeControls();
+
+        // Update initial score display
+        this.updateScore();
+        this.updateCrystalCounter();
         
-        // Special orbs settings
-        this.specialOrbTypes = [
-            { 
-                type: 'negative', 
-                color: '#ff0000', 
-                gradient: null,
-                effect: 'decreaseScore',
-                spawnChance: 0.2
-            },
-            { 
-                type: 'positive', 
-                color: '#00ff00', 
-                gradient: null,
-                effect: 'increaseScore',
-                spawnChance: 0.3
-            },
-            { 
-                type: 'speedUp', 
-                color: '#ffff00', 
-                gradient: null,
-                effect: 'increaseSpeed',
-                spawnChance: 0.25,
-                duration: 15000, // 15 seconds
-                disappearTime: 15000 // 15 seconds
-            },
-            { 
-                type: 'slowDown', 
-                color: '#0000ff', 
-                gradient: null,
-                effect: 'decreaseSpeed',
-                spawnChance: 0.25,
-                duration: 15000, // 15 seconds
-                disappearTime: 15000 // 15 seconds
-            },
-            { 
-                type: 'crystal', 
-                color: '#9932CC', 
-                gradient: null,
-                effect: 'addCrystal',
-                spawnChance: 0.4, // Increased from 0.15 to 0.4 for more frequent spawns
-                disappearTime: 12000 // Reduced from 15 to 12 seconds
-            }
-        ];
-        
-        // Crystal spawn timing
-        this.lastCrystalTime = 0;
-        this.crystalSpawnInterval = 7000; // 7 seconds between crystal spawns
-        
-        // Active effects
-        this.activeEffects = {
-            speedModifier: 1,
-            speedEffectEndTime: 0
-        };
-        
-        // Initialize empty arrays
-        this.snake = [];
-        this.specialOrbs = [];
-        this.previousPositions = [];
-        
-        // Create size selection menu
-        this.createSizeMenu();
-        
-        // Wait for size selection before starting the game
-        this.initialized = false;
-        
-        // Bind methods to ensure proper 'this' context
-        this.gameLoop = this.gameLoop.bind(this);
-        this.handleKeyPress = this.handleKeyPress.bind(this);
-        this.completeAdRevival = this.completeAdRevival.bind(this);
-        this.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady.bind(this);
-        this.onPlayerReady = this.onPlayerReady.bind(this);
-        this.onPlayerStateChange = this.onPlayerStateChange.bind(this);
-        
-        // Set up event listeners
-        document.addEventListener('keydown', this.handleKeyPress);
-        
-        // Make onYouTubeIframeAPIReady globally accessible
-        window.onYouTubeIframeAPIReady = this.onYouTubeIframeAPIReady;
-    }
-    
-    loadYouTubeAPI() {
-        // Load the YouTube IFrame Player API code asynchronously
-        const tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        const firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-    }
-    
-    onYouTubeIframeAPIReady() {
-        console.log('YouTube API ready');
-        // API is ready, but we don't create the player yet
-        // We'll create it when needed for the ad
-    }
-    
-    onPlayerReady(event) {
-        console.log('Player ready');
-        // Start playing the video when player is ready
-        event.target.playVideo();
-    }
-    
-    onPlayerStateChange(event) {
-        // When video ends (state = 0), enable the continue button
-        if (event.data === YT.PlayerState.ENDED) {
-            console.log('Video ended');
-            this.enableContinueButton();
-        }
-    }
-    
-    enableContinueButton() {
-        // Find the continue button in the modal
-        const continueButton = this.adModal.querySelector('#continueButton');
-        if (continueButton) {
-            // Show ad completion message
-            const timerDisplay = this.adModal.querySelector('#timerDisplay');
-            if (timerDisplay) {
-                timerDisplay.textContent = 'Реклама завершена!';
-                timerDisplay.style.color = '#00ff00';
-            }
-            
-            // Enable continue button
-            continueButton.disabled = false;
-            continueButton.style.background = '#FF8C00';
-            continueButton.style.borderColor = '#FF8C00';
-            continueButton.style.color = '#fff';
-            continueButton.style.cursor = 'pointer';
-            
-            continueButton.onmouseover = () => {
-                continueButton.style.background = '#FFA500';
-                continueButton.style.transform = 'translateY(-2px)';
-                continueButton.style.boxShadow = '0 5px 15px rgba(255, 140, 0, 0.5)';
-            };
-            
-            continueButton.onmouseout = () => {
-                continueButton.style.background = '#FF8C00';
-                continueButton.style.transform = 'translateY(0)';
-                continueButton.style.boxShadow = 'none';
-            };
-            
-            // Add completion message to container
-            const playerContainer = this.adModal.querySelector('#playerContainer');
-            if (playerContainer) {
-                const completionMessage = document.createElement('div');
-                completionMessage.textContent = 'Реклама просмотрена!';
-                completionMessage.style.cssText = `
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    color: #00ff00;
-                    font-size: 24px;
-                    text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
-                    background: rgba(0, 0, 0, 0.7);
-                    padding: 20px;
-                    border-radius: 10px;
-                    z-index: 10;
-                `;
-                playerContainer.appendChild(completionMessage);
-            }
-        }
-    }
-
-    createSizeMenu() {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        `;
-
-        this.menuElement = document.createElement('div');
-        this.menuElement.style.cssText = `
-            background: #000;
-            padding: 30px 50px;
-            border-radius: 15px;
-            border: 2px solid #00ffff;
-            text-align: center;
-            min-width: 300px;
-        `;
-
-        const title = document.createElement('h2');
-        title.textContent = 'Выберите размер поля';
-        title.style.cssText = `
-            color: #00ffff;
-            margin-bottom: 30px;
-            font-size: 24px;
-            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
-        `;
-
-        const sizes = [10, 20, 40];
-        let currentSizeIndex = 1; // Начинаем с 20x20
-
-        const sizeDisplay = document.createElement('div');
-        sizeDisplay.style.cssText = `
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 20px;
-            margin-bottom: 30px;
-        `;
-
-        const createArrowButton = (direction) => {
-            const button = document.createElement('button');
-            button.textContent = direction === 'left' ? '←' : '→';
-            button.style.cssText = `
-                background: none;
-                border: none;
-                color: #00ffff;
-                font-size: 30px;
-                cursor: pointer;
-                padding: 0 10px;
-                transition: transform 0.2s;
-            `;
-            button.onmouseover = () => button.style.transform = 'scale(1.2)';
-            button.onmouseout = () => button.style.transform = 'scale(1)';
-            return button;
-        };
-
-        const leftArrow = createArrowButton('left');
-        const rightArrow = createArrowButton('right');
-
-        const sizeText = document.createElement('div');
-        sizeText.style.cssText = `
-            color: #00ffff;
-            font-size: 36px;
-            font-weight: bold;
-            min-width: 150px;
-            text-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
-        `;
-
-        const updateSizeText = () => {
-            const size = sizes[currentSizeIndex];
-            sizeText.textContent = `${size} x ${size}`;
-        };
-
-        leftArrow.onclick = () => {
-            if (currentSizeIndex > 0) {
-                currentSizeIndex--;
-                updateSizeText();
-            }
-        };
-
-        rightArrow.onclick = () => {
-            if (currentSizeIndex < sizes.length - 1) {
-                currentSizeIndex++;
-                updateSizeText();
-            }
-        };
-
-        const startButton = document.createElement('button');
-        startButton.textContent = 'Начать игру';
-        startButton.style.cssText = `
-            background: #00ffff;
-            color: #000;
-            border: none;
-            padding: 12px 30px;
-            font-size: 18px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 20px;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        `;
-
-        startButton.onmouseover = () => {
-            startButton.style.background = '#66ffff';
-            startButton.style.transform = 'translateY(-2px)';
-            startButton.style.boxShadow = '0 5px 15px rgba(0, 255, 255, 0.4)';
-        };
-
-        startButton.onmouseout = () => {
-            startButton.style.background = '#00ffff';
-            startButton.style.transform = 'translateY(0)';
-            startButton.style.boxShadow = 'none';
-        };
-
-        startButton.onclick = () => {
-            overlay.style.opacity = '0';
-            overlay.style.transition = 'opacity 0.3s';
-            setTimeout(() => {
-                this.initializeGame(sizes[currentSizeIndex]);
-                overlay.remove();
-            }, 300);
-        };
-
-        updateSizeText();
-
-        sizeDisplay.appendChild(leftArrow);
-        sizeDisplay.appendChild(sizeText);
-        sizeDisplay.appendChild(rightArrow);
-
-        this.menuElement.appendChild(title);
-        this.menuElement.appendChild(sizeDisplay);
-        this.menuElement.appendChild(startButton);
-
-        overlay.appendChild(this.menuElement);
-        document.body.appendChild(overlay);
-    }
-
-    initializeGame(size) {
-        this.gridSize = size;
-        this.tileSize = Math.min(
-            Math.floor(this.canvas.width / size),
-            Math.floor(this.canvas.height / size)
-        );
-        
-        // Update canvas size to match grid
-        this.canvas.width = this.tileSize * size;
-        this.canvas.height = this.tileSize * size;
-        
-        // Remove menu
-        if (this.menuElement) {
-            this.menuElement.remove();
-        }
-        
-        // Initialize game components and reset counters
-        this.deathCount = 0;
-        this.adRevivalsUsed = 0;
-        localStorage.setItem('snakeAdRevivals', '0'); // Reset ad counter in localStorage
-        
-        // For large grids, adjust settings for better performance
-        if (size >= 40) {
-            // Reduce particle count for large grids
-            this.maxParticles = 15;
-            
-            // Increase the move interval slightly for better playability
-            this.baseInterval = 180;
-            
-            // Adjust snake starting position for large grids
-            this.startPosition = {
-                x: Math.floor(size / 8),
-                y: Math.floor(size / 8)
-            };
-        } else {
-            this.maxParticles = 30;
-            this.baseInterval = 150;
-            this.startPosition = {
-                x: 5,
-                y: 5
-            };
-        }
-        
-        // Initialize game components
-        this.initializeGameComponents();
-        
-        // Start game with a forced reset
-        this.initialized = true;
-        this.reset();
-        
-        // Force immediate rendering of the first frame
+        // Force initial render
         this.draw();
         
-        // Use setTimeout to ensure the UI updates before starting the game loop
-        setTimeout(() => {
-            console.log("Starting game loop for grid size: " + size);
-            this.lastRenderTime = performance.now();
-            this.lastMoveTime = performance.now();
-            this.gameRunning = true;
+        // Start game loop
+        requestAnimationFrame(() => this.gameLoop());
+    }
+
+    setupGameDimensions() {
+        if (window.innerWidth <= 768) {
+            // Mobile dimensions
+            const screenWidth = window.innerWidth;
+            const screenHeight = window.innerHeight;
+            const size = Math.min(screenWidth - 40, Math.min(screenHeight - 200, 400));
             
-            // Start the game loop
-            this.startGameLoop();
-        }, 200);
-    }
-
-    initializeGameComponents() {
-        // Particle systems
-        this.particles = new Array(this.maxParticles).fill(null).map(() => ({
-            active: false,
-            x: 0,
-            y: 0,
-            vx: 0,
-            vy: 0,
-            alpha: 0,
-            color: ''
-        }));
-        this.activeParticles = 0;
-
-        // Sound effects
-        this.createSoundEffects();
-        
-        // Load high score
-        this.highScore = localStorage.getItem('snakeHighScore') || 0;
-        this.highScoreElement.textContent = this.highScore;
-        
-        // Pre-create gradients
-        this.snakeGradient = this.createSnakeGradient();
-        this.foodGradient = this.createFoodGradient();
-        
-        // Create special orb gradients
-        this.specialOrbTypes.forEach(orb => {
-            orb.gradient = this.createSpecialOrbGradient(orb.color);
-        });
-        
-        // Animation settings
-        this.animationProgress = 0;
-        this.previousPositions = [];
-        
-        // Game loop optimization
-        this.lastRenderTime = 0;
-        this.lastMoveTime = 0;
-        this.fps = 60;
-        this.fpsInterval = 1000 / this.fps;
-    }
-
-    createSoundEffects() {
-        // Создаем аудио контекст
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        
-        // Создаем звук "бульканья"
-        this.createBubbleSound = () => {
-            const oscillator = this.audioContext.createOscillator();
-            const gainNode = this.audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(this.audioContext.destination);
-            
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(
-                400,
-                this.audioContext.currentTime + 0.1
-            );
-            
-            gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(
-                0.01,
-                this.audioContext.currentTime + 0.1
-            );
-            
-            oscillator.start();
-            oscillator.stop(this.audioContext.currentTime + 0.1);
-        };
-    }
-
-    createSnakeGradient() {
-        const gradient = this.ctx.createLinearGradient(0, 0, this.tileSize, this.tileSize);
-        gradient.addColorStop(0, '#00ffff');
-        gradient.addColorStop(1, '#0099ff');
-        return gradient;
-    }
-
-    createFoodGradient() {
-        const gradient = this.ctx.createRadialGradient(
-            this.tileSize / 2, this.tileSize / 2, 0,
-            this.tileSize / 2, this.tileSize / 2, this.tileSize / 2
-        );
-        gradient.addColorStop(0, '#ff00ff');
-        gradient.addColorStop(1, '#ff0066');
-        return gradient;
-    }
-
-    createSpecialOrbGradient(color) {
-        const gradient = this.ctx.createRadialGradient(
-            this.tileSize / 2, this.tileSize / 2, 0,
-            this.tileSize / 2, this.tileSize / 2, this.tileSize / 2
-        );
-        gradient.addColorStop(0, color);
-        gradient.addColorStop(1, this.darkenColor(color, 30));
-        return gradient;
-    }
-    
-    darkenColor(color, percent) {
-        // Convert hex to RGB
-        let r = parseInt(color.substring(1, 3), 16);
-        let g = parseInt(color.substring(3, 5), 16);
-        let b = parseInt(color.substring(5, 7), 16);
-        
-        // Darken
-        r = Math.floor(r * (100 - percent) / 100);
-        g = Math.floor(g * (100 - percent) / 100);
-        b = Math.floor(b * (100 - percent) / 100);
-        
-        // Convert back to hex
-        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    }
-    
-    reset() {
-        this.snake = [
-            { x: this.startPosition.x, y: this.startPosition.y },
-            { x: this.startPosition.x - 1, y: this.startPosition.y },
-            { x: this.startPosition.x - 2, y: this.startPosition.y }
-        ];
-        
-        this.direction = 'right';
-        this.nextDirection = 'right';
-        this.score = 0;
-        this.gameOver = false;
-        this.moveInterval = this.baseInterval;
-        this.food = this.generateFood();
-        this.specialOrbs = [];
-        this.lastMoveTime = 0;
-        this.activeParticles = 0;
-        this.animationProgress = 0;
-        this.previousPositions = this.snake.map(segment => ({ ...segment }));
-        this.lastSpecialOrbTime = 0;
-        
-        // Reset active effects and timers
-        this.activeEffects = {
-            speedModifier: 1,
-            speedEffectEndTime: 0
-        };
-        this.speedEffectTimer.style.display = 'none';
-        this.slowEffectTimer.style.display = 'none';
-        
-        this.scoreElement.textContent = this.score;
-        this.gameOverElement.style.display = 'none';
-        this.createBackgroundBuffer();
-        this.inputBuffer = null;
-        this.lastInputTime = 0;
-        this.inputDelay = 30;
-    }
-
-    createBackgroundBuffer() {
-        this.bgCanvas = document.createElement('canvas');
-        this.bgCanvas.width = this.canvas.width;
-        this.bgCanvas.height = this.canvas.height;
-        const bgCtx = this.bgCanvas.getContext('2d', { alpha: false });
-
-        // Чистый черный фон
-        bgCtx.fillStyle = '#000000';
-        bgCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Определяем, мобильное ли устройство
-        const isMobile = window.innerWidth <= 768;
-
-        // For large grids or mobile, optimize grid drawing
-        if (this.gridSize >= 40 || isMobile) {
-            // Draw fewer grid lines for better performance and visibility
-            bgCtx.strokeStyle = '#1a1a1a';
-            bgCtx.lineWidth = isMobile ? 0.5 : 1; // Тоньше линии для мобильных
-            
-            // Draw only every 5th line for large grids or mobile
-            const step = isMobile ? 10 : 5;
-            for(let i = 0; i <= this.gridSize; i += step) {
-                // Вертикальные линии
-                bgCtx.beginPath();
-                bgCtx.moveTo(i * this.tileSize, 0);
-                bgCtx.lineTo(i * this.tileSize, this.canvas.height);
-                bgCtx.stroke();
-                
-                // Горизонтальные линии
-                bgCtx.beginPath();
-                bgCtx.moveTo(0, i * this.tileSize);
-                bgCtx.lineTo(this.canvas.width, i * this.tileSize);
-                bgCtx.stroke();
-            }
+            this.canvas.width = size;
+            this.canvas.height = size;
         } else {
-            // Regular grid for desktop
-            bgCtx.strokeStyle = '#1a1a1a';
-            bgCtx.lineWidth = 1;
-            
-            for(let i = 0; i <= this.gridSize; i++) {
-                // Вертикальные линии
-                bgCtx.beginPath();
-                bgCtx.moveTo(i * this.tileSize, 0);
-                bgCtx.lineTo(i * this.tileSize, this.canvas.height);
-                bgCtx.stroke();
-                
-                // Горизонтальные линии
-                bgCtx.beginPath();
-                bgCtx.moveTo(0, i * this.tileSize);
-                bgCtx.lineTo(this.canvas.width, i * this.tileSize);
-                bgCtx.stroke();
-            }
+            // Desktop dimensions
+            this.canvas.width = 400;
+            this.canvas.height = 400;
         }
+        
+        this.tileSize = this.canvas.width / 20; // 20x20 grid
+        this.gridSize = 20;
     }
 
-    createParticle(x, y, color) {
-        if (this.activeParticles >= this.maxParticles) return null;
-        
-        const particle = this.particles[this.activeParticles];
-        particle.active = true;
-        particle.x = x;
-        particle.y = y;
-        particle.vx = (Math.random() - 0.5) * 4;
-        particle.vy = (Math.random() - 0.5) * 4;
-        particle.alpha = 1;
-        particle.color = color;
-        particle.isDiamond = false; // By default, particles are circles
-        this.activeParticles++;
-        
-        return particle;
-    }
+    draw() {
+        // Clear canvas with subtle fade
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    updateParticles() {
-        let i = 0;
-        while (i < this.activeParticles) {
-            const particle = this.particles[i];
-            particle.x += particle.vx;
-            particle.y += particle.vy;
-            particle.alpha *= 0.92;
+        // Calculate current position with bezier interpolation
+        const progress = this.smoothStep(this.moveProgress);
+        const head = this.snake[0];
+        
+        // Calculate smooth position with bezier curve
+        let drawX, drawY;
+        if (this.lastPos) {
+            // Use bezier curve for smoother movement
+            const t = progress;
+            const cp1x = this.lastPos.x + this.direction.x * 0.5;
+            const cp1y = this.lastPos.y + this.direction.y * 0.5;
+            const cp2x = head.x - this.direction.x * 0.5;
+            const cp2y = head.y - this.direction.y * 0.5;
             
-            if (particle.alpha < 0.1) {
-                particle.active = false;
-                this.particles[i] = this.particles[this.activeParticles - 1];
-                this.activeParticles--;
+            drawX = this.bezierPoint(this.lastPos.x, cp1x, cp2x, head.x, t);
+            drawY = this.bezierPoint(this.lastPos.y, cp1y, cp2y, head.y, t);
+        } else {
+            drawX = head.x + this.direction.x * progress;
+            drawY = head.y + this.direction.y * progress;
+        }
+
+        // Draw snake body with improved smoothness
+        for (let i = this.snake.length - 1; i >= 0; i--) {
+            const segment = this.snake[i];
+            const segmentProgress = Math.max(0, progress - (i * this.segmentSpacing));
+            let segX = segment.x;
+            let segY = segment.y;
+            
+            if (i === 0) {
+                segX = drawX;
+                segY = drawY;
             } else {
-                i++;
+                const prev = this.snake[i - 1];
+                if (segmentProgress > 0) {
+                    const eased = this.smoothStep(segmentProgress);
+                    segX = this.lerp(segment.x, prev.x, eased);
+                    segY = this.lerp(segment.y, prev.y, eased);
+                }
             }
+
+            // Draw segment with enhanced effects
+            this.ctx.save();
+            this.ctx.translate((segX + 0.5) * this.tileSize, (segY + 0.5) * this.tileSize);
+            
+            if (i === 0) {
+                // Ultra smooth head rotation
+                this.targetAngle = Math.atan2(this.direction.y, this.direction.x);
+                const angleDiff = this.targetAngle - this.currentAngle;
+                const normalizedDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+                this.currentAngle += normalizedDiff * this.rotationSpeed;
+                this.ctx.rotate(this.currentAngle);
+
+                // Draw head with enhanced gradient
+                const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, this.tileSize);
+                gradient.addColorStop(0, '#ffffff');
+                gradient.addColorStop(0.2, '#00ffff');
+                gradient.addColorStop(0.5, '#0088ff');
+                gradient.addColorStop(1, '#0066cc');
+                this.ctx.fillStyle = gradient;
+                
+                // Smooth glow effect
+                this.ctx.shadowColor = '#00ffff';
+                this.ctx.shadowBlur = 15;
+                
+                const size = this.tileSize * 0.9;
+                this.ctx.beginPath();
+                this.ctx.roundRect(-size/2, -size/2, size, size, 8);
+                this.ctx.fill();
+
+                // Draw eyes with smooth highlights
+                this.ctx.shadowBlur = 0;
+                this.ctx.fillStyle = '#000';
+                const eyeSize = this.tileSize / 5;
+                const eyeOffset = size/3;
+                
+                this.ctx.beginPath();
+                this.ctx.arc(eyeOffset, -size/4, eyeSize, 0, Math.PI * 2);
+                this.ctx.arc(eyeOffset, size/4, eyeSize, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.fillStyle = '#fff';
+                this.ctx.beginPath();
+                this.ctx.arc(eyeOffset + eyeSize/3, -size/4 - eyeSize/3, eyeSize/3, 0, Math.PI * 2);
+                this.ctx.arc(eyeOffset + eyeSize/3, size/4 - eyeSize/3, eyeSize/3, 0, Math.PI * 2);
+                this.ctx.fill();
+            } else {
+                // Draw body segments with smooth transitions
+                const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, this.tileSize);
+                gradient.addColorStop(0, '#0088ff');
+                gradient.addColorStop(0.6, '#0066cc');
+                gradient.addColorStop(1, '#004499');
+                this.ctx.fillStyle = gradient;
+                
+                const size = this.tileSize * (0.85 - (i * 0.01));
+                this.ctx.shadowColor = '#0066cc';
+                this.ctx.shadowBlur = 10;
+                
+                this.ctx.beginPath();
+                this.ctx.roundRect(-size/2, -size/2, size, size, 6);
+                this.ctx.fill();
+            }
+            
+            this.ctx.restore();
         }
+
+        // Draw food and crystal
+        if (this.food) {
+            this.drawFood();
+        }
+        if (this.crystal) {
+            this.drawCrystal();
+        }
+    }
+
+    drawFood() {
+        const x = this.food.x * this.tileSize + this.tileSize / 2;
+        const y = this.food.y * this.tileSize + this.tileSize / 2;
+        
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        
+        // Add glow
+        this.ctx.shadowColor = '#ff0000';
+        this.ctx.shadowBlur = 15;
+        
+        // Create gradient
+        const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, this.tileSize/2);
+        gradient.addColorStop(0, '#ff6666');
+        gradient.addColorStop(0.5, '#ff0000');
+        gradient.addColorStop(1, '#cc0000');
+        
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, this.tileSize/2 * 0.8, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.restore();
+    }
+
+    drawCrystal() {
+        const x = this.crystal.x * this.tileSize + this.tileSize / 2;
+        const y = this.crystal.y * this.tileSize + this.tileSize / 2;
+        
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        
+        // Add glow
+        this.ctx.shadowColor = '#9932CC';
+        this.ctx.shadowBlur = 15;
+        
+        // Create gradient
+        const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, this.tileSize/2);
+        gradient.addColorStop(0, '#ffffff');
+        gradient.addColorStop(0.5, '#9932CC');
+        gradient.addColorStop(1, '#4B0082');
+        
+        this.ctx.fillStyle = gradient;
+        
+        // Draw crystal shape
+        const size = this.tileSize * 0.7;
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, -size/2);
+        this.ctx.lineTo(size/2, 0);
+        this.ctx.lineTo(0, size/2);
+        this.ctx.lineTo(-size/2, 0);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        this.ctx.restore();
+    }
+
+    gameLoop(currentTime = 0) {
+        if (this.gameOver) return;
+
+        requestAnimationFrame(time => this.gameLoop(time));
+
+        if (this.lastRenderTime === 0) {
+            this.lastRenderTime = currentTime;
+            return;
+        }
+
+        const timeSinceLastRender = currentTime - this.lastRenderTime;
+        this.moveProgress = Math.min(1, timeSinceLastRender / this.gameSpeed);
+
+        if (timeSinceLastRender >= this.gameSpeed) {
+            const nextPos = {
+                x: this.snake[0].x + this.nextDirection.x,
+                y: this.snake[0].y + this.nextDirection.y
+            };
+
+            // Check collisions
+            if (nextPos.x < 0 || nextPos.x >= this.gridSize || 
+                nextPos.y < 0 || nextPos.y >= this.gridSize ||
+                this.snake.slice(1).some(segment => 
+                    segment.x === nextPos.x && segment.y === nextPos.y)) {
+                this.showGameOver();
+                return;
+            }
+
+            // Store last position for smooth interpolation
+            this.lastPos = {...this.snake[0]};
+            
+            this.direction = {...this.nextDirection};
+            this.update();
+            this.moveProgress = 0;
+            this.lastRenderTime = currentTime;
+        }
+
+        this.draw();
+    }
+
+    update() {
+        const newHead = {
+            x: this.snake[0].x + this.direction.x,
+            y: this.snake[0].y + this.direction.y
+        };
+
+        // Add new head
+        this.snake.unshift(newHead);
+
+        // Check if food is eaten
+        if (newHead.x === this.food.x && newHead.y === this.food.y) {
+            this.score += 10;
+            this.updateScore();
+        this.food = this.generateFood();
+            this.gameSpeed = Math.max(50, this.gameSpeed - 2);
+        } else {
+            this.snake.pop();
+        }
+
+        // Check if crystal is collected
+        if (this.crystal && 
+            newHead.x === this.crystal.x && 
+            newHead.y === this.crystal.y) {
+            this.crystals++;
+            this.crystal = this.generateCrystal();
+            this.updateCrystalCounter();
+        }
+    }
+
+    checkWallCollision(position) {
+        // Wall collision check with integer positions
+        return Math.floor(position.x) < 0 || Math.floor(position.x) >= this.gridSize ||
+               Math.floor(position.y) < 0 || Math.floor(position.y) >= this.gridSize;
+    }
+
+    checkSelfCollision(position) {
+        // Skip collision check for first few frames
+        if (this.frameCount < 5) return false;
+        
+        const headX = Math.round(position.x);
+        const headY = Math.round(position.y);
+        
+        return this.snake.slice(1).some(segment => {
+            const segX = Math.round(segment.x);
+            const segY = Math.round(segment.y);
+            return segX === headX && segY === headY;
+        });
     }
     
     generateFood() {
         let food;
-        let attempts = 0;
-        const maxAttempts = 50;
-        
-        // For large grids, we need to be more careful about placement
-        const safeDistance = this.gridSize >= 40 ? 3 : 1;
-        
         do {
             food = {
                 x: Math.floor(Math.random() * this.gridSize),
-                y: Math.floor(Math.random() * this.gridSize),
-                type: 'regular'
+                y: Math.floor(Math.random() * this.gridSize)
             };
-            
-            attempts++;
-            if (attempts >= maxAttempts) {
-                // If we can't find a good spot after many attempts, just place it somewhere valid
-                for (let x = 0; x < this.gridSize; x++) {
-                    for (let y = 0; y < this.gridSize; y++) {
-                        const isSnake = this.snake.some(segment => segment.x === x && segment.y === y);
-                        const isSpecialOrb = this.specialOrbs.some(orb => orb.x === x && orb.y === y);
-                        
-                        if (!isSnake && !isSpecialOrb) {
-                            return { x, y, type: 'regular' };
-                        }
-                    }
-                }
-                // If we somehow still can't find a spot, place it far from the snake
-                return { 
-                    x: (this.snake[0].x + Math.floor(this.gridSize / 2)) % this.gridSize,
-                    y: (this.snake[0].y + Math.floor(this.gridSize / 2)) % this.gridSize,
-                    type: 'regular'
-                };
-            }
-            
-            // Check if the food is too close to the snake head
-            const head = this.snake[0];
-            const tooCloseToHead = Math.abs(food.x - head.x) <= safeDistance && 
-                                  Math.abs(food.y - head.y) <= safeDistance;
-            
-            if (tooCloseToHead) continue;
-            
-        } while (
-            this.snake.some(segment => segment.x === food.x && segment.y === food.y) ||
-            this.specialOrbs.some(orb => orb.x === food.x && orb.y === food.y)
-        );
-        
+        } while (this.snake.some(segment => segment.x === food.x && segment.y === food.y) ||
+                (this.crystal && this.crystal.x === food.x && this.crystal.y === food.y));
         return food;
     }
     
-    generateSpecialOrb() {
-        // For large grids, adjust spawn chances
-        if (this.gridSize >= 40) {
-            // Reduce spawn chances for large grids to avoid too many orbs
-            this.specialOrbTypes.forEach(orb => {
-                orb.spawnChance = orb.spawnChance * 0.7;
-            });
-        }
-        
-        // Choose a random orb type based on spawn chance
-        const totalChance = this.specialOrbTypes.reduce((sum, orb) => sum + orb.spawnChance, 0);
-        let random = Math.random() * totalChance;
-        let selectedType = null;
-        
-        for (const orbType of this.specialOrbTypes) {
-            random -= orbType.spawnChance;
-            if (random <= 0) {
-                selectedType = orbType;
-                break;
-            }
-        }
-        
-        if (!selectedType) return null;
-        
-        let orb;
-        let attempts = 0;
-        const maxAttempts = 20;
-        
-        // For large grids, we need to be more careful about placement
-        const safeDistance = this.gridSize >= 40 ? 3 : 1;
-        
+    generateCrystal() {
+        // 20% chance to generate crystal
+        if (Math.random() > 0.2) return null;
+
+        let crystal;
         do {
-            orb = {
+            crystal = {
                 x: Math.floor(Math.random() * this.gridSize),
-                y: Math.floor(Math.random() * this.gridSize),
-                type: selectedType.type,
-                createdAt: performance.now(),
-                disappearAt: selectedType.disappearTime ? performance.now() + selectedType.disappearTime : null
+                y: Math.floor(Math.random() * this.gridSize)
             };
-            attempts++;
-            
-            if (attempts >= maxAttempts) return null;
-            
-            // Check if the orb is too close to the snake head
-            const head = this.snake[0];
-            const tooCloseToHead = Math.abs(orb.x - head.x) <= safeDistance && 
-                                  Math.abs(orb.y - head.y) <= safeDistance;
-            
-            if (tooCloseToHead) continue;
-            
-        } while (
-            this.snake.some(segment => segment.x === orb.x && segment.y === orb.y) ||
-            (this.food.x === orb.x && this.food.y === orb.y) ||
-            this.specialOrbs.some(existingOrb => existingOrb.x === orb.x && existingOrb.y === orb.y)
-        );
-        
-        return orb;
+        } while (this.snake.some(segment => segment.x === crystal.x && segment.y === crystal.y) ||
+                (this.food.x === crystal.x && this.food.y === crystal.y));
+        return crystal;
     }
-    
-    handleKeyPress(event) {
-        const keyMap = {
-            'ArrowUp': 'up',
-            'ArrowDown': 'down',
-            'ArrowLeft': 'left',
-            'ArrowRight': 'right',
-            'w': 'up',
-            's': 'down',
-            'a': 'left',
-            'd': 'right'
-        };
-        
-        const newDirection = keyMap[event.key];
-        if (!newDirection) return;
-        
-        this.handleDirectionChange(newDirection);
-    }
-    
-    handleSpecialOrb(orb) {
-        const orbType = this.specialOrbTypes.find(type => type.type === orb.type);
-        
-        if (!orbType) return;
-        
-        switch (orbType.effect) {
-            case 'decreaseScore':
-                // Decrease score by 10 and remove one segment
-                this.score = Math.max(0, this.score - 10);
-                this.scoreElement.textContent = this.score;
-                
-                if (this.snake.length > 3) {
-                    const removedSegment = this.snake.pop();
-                    // Create particles for the removed segment
-                    for (let i = 0; i < 5; i++) {
-                        this.createParticle(
-                            removedSegment.x * this.tileSize + this.tileSize / 2,
-                            removedSegment.y * this.tileSize + this.tileSize / 2,
-                            orbType.color
-                        );
-                    }
-                }
-                break;
-                
-            case 'increaseScore':
-                // Increase score by 10 and add one segment
-                this.score += 10;
-                this.scoreElement.textContent = this.score;
-                
-                // Add a new segment at the end of the snake
-                const tail = this.snake[this.snake.length - 1];
-                this.snake.push({ ...tail });
-                break;
-                
-            case 'increaseSpeed':
-                // Increase speed by 30% for 15 seconds
-                this.activeEffects.speedModifier = 0.7;
-                this.activeEffects.speedEffectEndTime = performance.now() + orbType.duration;
-                
-                // Show speed effect timer
-                this.speedEffectTimer.style.display = 'block';
-                this.speedEffectTimer.textContent = 'УСКОРЕНИЕ: 15с';
-                
-                // Start timer update
-                this.updateSpeedTimer();
-                break;
-                
-            case 'decreaseSpeed':
-                // Decrease speed by 30% for 15 seconds
-                this.activeEffects.speedModifier = 1.3;
-                this.activeEffects.speedEffectEndTime = performance.now() + orbType.duration;
-                
-                // Show slow effect timer
-                this.slowEffectTimer.style.display = 'block';
-                this.slowEffectTimer.textContent = 'ЗАМЕДЛЕНИЕ: 15с';
-                
-                // Start timer update
-                this.updateSlowTimer();
-                break;
-                
-            case 'addCrystal':
-                // Add a crystal
-                this.crystals++;
-                localStorage.setItem('snakeCrystals', this.crystals);
-                this.crystalElement.textContent = `КРИСТАЛЛЫ: ${this.crystals}`;
-                
-                // Create special crystal collection effect - diamond-shaped particles
-                for (let i = 0; i < 12; i++) {
-                    const particle = this.createParticle(
-                        orb.x * this.tileSize + this.tileSize / 2,
-                        orb.y * this.tileSize + this.tileSize / 2,
-                        orbType.color
-                    );
-                    
-                    // If we have a reference to the particle, make it diamond-shaped
-                    if (particle) {
-                        particle.isDiamond = true;
-                    }
-                }
-                break;
-        }
-        
-        // Create particles for the collected orb
-        for (let i = 0; i < 8; i++) {
-            this.createParticle(
-                orb.x * this.tileSize + this.tileSize / 2,
-                orb.y * this.tileSize + this.tileSize / 2,
-                orbType.color
-            );
-        }
-        
-        // Play sound effect
-        this.createBubbleSound();
-    }
-    
-    updateSpeedTimer() {
-        if (this.activeEffects.speedEffectEndTime > performance.now()) {
-            const remainingTime = Math.ceil((this.activeEffects.speedEffectEndTime - performance.now()) / 1000);
-            this.speedEffectTimer.textContent = `УСКОРЕНИЕ: ${remainingTime}с`;
-            requestAnimationFrame(() => this.updateSpeedTimer());
-        } else {
-            this.speedEffectTimer.style.display = 'none';
-        }
-    }
-    
-    updateSlowTimer() {
-        if (this.activeEffects.speedEffectEndTime > performance.now()) {
-            const remainingTime = Math.ceil((this.activeEffects.speedEffectEndTime - performance.now()) / 1000);
-            this.slowEffectTimer.textContent = `ЗАМЕДЛЕНИЕ: ${remainingTime}с`;
-            requestAnimationFrame(() => this.updateSlowTimer());
-        } else {
-            this.slowEffectTimer.style.display = 'none';
-        }
-    }
-    
-    moveSnake(currentTime) {
-        if (this.gameOver) return false;
-        
-        // Check if any speed effect has expired
-        if (this.activeEffects.speedEffectEndTime > 0 && currentTime >= this.activeEffects.speedEffectEndTime) {
-            this.activeEffects.speedModifier = 1;
-            this.activeEffects.speedEffectEndTime = 0;
-        }
-        
-        // Apply speed modifier to move interval
-        const effectiveInterval = this.moveInterval * this.activeEffects.speedModifier;
-        
-        if (currentTime - this.lastMoveTime < effectiveInterval) {
-            // Оптимизированный расчет прогресса анимации
-            this.animationProgress = Math.min((currentTime - this.lastMoveTime) / effectiveInterval, 1);
-            return false;
-        }
-        
-        this.lastMoveTime = currentTime;
-        
-        // Оптимизация генерации специальных сфер
-        const specialOrbInterval = this.isMobile ? 8000 : 4000; // Увеличиваем интервал на мобильных
-        
-        if (currentTime - this.lastSpecialOrbTime > specialOrbInterval) {
-            const maxSpecialOrbs = this.isMobile ? 3 : 7; // Уменьшаем количество сфер на мобильных
-            
-            if (this.specialOrbs.length < maxSpecialOrbs) {
-                const newOrb = this.generateSpecialOrb();
-                if (newOrb) {
-                    this.specialOrbs.push(newOrb);
-                }
-            }
-            this.lastSpecialOrbTime = currentTime;
-        }
-        
-        // Check if any special orbs should disappear
-        this.specialOrbs = this.specialOrbs.filter(orb => {
-            if (orb.disappearAt && currentTime >= orb.disappearAt) {
-                // Create disappearing particles
-                for (let i = 0; i < 5; i++) {
-                    const orbType = this.specialOrbTypes.find(type => type.type === orb.type);
-                    this.createParticle(
-                        orb.x * this.tileSize + this.tileSize / 2,
-                        orb.y * this.tileSize + this.tileSize / 2,
-                        orbType ? orbType.color : '#ffffff'
-                    );
-                }
-                return false;
-            }
-            return true;
-        });
-        
-        // Применяем буферизованный ввод, если он есть
-        if (this.inputBuffer) {
-            this.nextDirection = this.inputBuffer;
-            this.inputBuffer = null;
-        }
-        
-        this.direction = this.nextDirection;
-        
-        // Store previous positions for animation
-        this.previousPositions = this.snake.map(segment => ({ ...segment }));
-        this.animationProgress = 0;
-        
-        const head = { ...this.snake[0] };
-        
-        switch (this.direction) {
-            case 'up': head.y--; break;
-            case 'down': head.y++; break;
-            case 'left': head.x--; break;
-            case 'right': head.x++; break;
-        }
-        
-        if (
-            head.x < 0 || head.x >= this.gridSize ||
-            head.y < 0 || head.y >= this.gridSize ||
-            this.snake.some(segment => segment.x === head.x && segment.y === head.y)
-        ) {
-            this.gameOver = true;
-            this.createGameOverScreen();
-            this.gameOverElement.style.display = 'block';
-            this.deathCount++;
-            
-            // Update high score if needed
-            if (this.score > this.highScore) {
-                this.highScore = this.score;
-                this.highScoreElement.textContent = this.highScore;
-                localStorage.setItem('snakeHighScore', this.highScore);
-            }
-            return false;
-        }
-        
-        this.snake.unshift(head);
-        
-        // Check for collision with special orbs
-        const collidedOrbIndex = this.specialOrbs.findIndex(orb => orb.x === head.x && orb.y === head.y);
-        if (collidedOrbIndex !== -1) {
-            const collidedOrb = this.specialOrbs[collidedOrbIndex];
-            this.handleSpecialOrb(collidedOrb);
-            this.specialOrbs.splice(collidedOrbIndex, 1);
-        }
-        // Check for collision with regular food
-        else if (head.x === this.food.x && head.y === this.food.y) {
-            this.score += 10;
-            this.scoreElement.textContent = this.score;
-            this.food = this.generateFood();
-            
-            // Проверяем достижение максимальной скорости с учетом размера поля и устройства
-            if (!this.maxSpeed) {
-                const isMobile = window.innerWidth <= 768;
-                const speedLimit = isMobile ? 80 : (this.gridSize === 10 ? 80 : 140);
-                if (this.score < speedLimit) {
-                    this.moveInterval = Math.max(50, this.moveInterval - 5);
-                }
-            }
-            
-            // Создаем эффекты при сборе еды
-            for(let i = 0; i < 8; i++) {
-                this.createParticle(
-                    head.x * this.tileSize + this.tileSize / 2,
-                    head.y * this.tileSize + this.tileSize / 2,
-                    '#ff00ff'
-                );
-            }
-            
-            // Воспроизводим звук
-            this.createBubbleSound();
-        } else {
-            const tail = this.snake.pop();
-            this.createParticle(
-                tail.x * this.tileSize + this.tileSize / 2,
-                tail.y * this.tileSize + this.tileSize / 2,
-                '#00ffff'
-            );
-        }
-        
-        return true;
-    }
-    
-    update(currentTime) {
-        if (this.moveSnake(currentTime)) {
-            this.updateParticles();
-        }
-    }
-    
-    draw() {
-        // Оптимизация отрисовки
-        const ctx = this.ctx;
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Отрисовка фона
-        ctx.drawImage(this.bgCanvas, 0, 0);
-        
-        // Оптимизация для больших полей и мобильных устройств
-        const isLargeGrid = this.gridSize >= 40 || this.isMobile;
-        
-        // Отрисовка частиц с оптимизацией
-        if (this.activeParticles > 0) {
-            ctx.globalAlpha = 1;
-            for (let i = 0; i < this.activeParticles; i++) {
-                const particle = this.particles[i];
-                if (!particle.active) continue;
-                
-                ctx.globalAlpha = particle.alpha;
-                ctx.fillStyle = particle.color;
-                
-                if (particle.isDiamond) {
-                    const size = isLargeGrid ? 4 : 6;
-                    ctx.fillRect(particle.x - size/2, particle.y - size/2, size, size);
-                } else {
-                    ctx.beginPath();
-                    ctx.arc(particle.x, particle.y, isLargeGrid ? 1.5 : 2, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-            ctx.globalAlpha = 1;
-        }
-        
-        // Оптимизация отрисовки змейки
-        const snakeColor = isLargeGrid ? '#00ffff' : this.snakeGradient;
-        ctx.fillStyle = snakeColor;
-        ctx.shadowColor = '#00ffff';
-        ctx.shadowBlur = isLargeGrid ? 3 : 5;
-        
-        for (let i = 0; i < this.snake.length; i++) {
-            const current = this.snake[i];
-            const previous = this.previousPositions[i] || current;
-            
-            const x = previous.x + (current.x - previous.x) * this.animationProgress;
-            const y = previous.y + (current.y - previous.y) * this.animationProgress;
-            
-            const pixelX = x * this.tileSize;
-            const pixelY = y * this.tileSize;
-            
-            ctx.fillRect(
-                pixelX + (isLargeGrid ? 1 : 2),
-                pixelY + (isLargeGrid ? 1 : 2),
-                this.tileSize - (isLargeGrid ? 2 : 4),
-                this.tileSize - (isLargeGrid ? 2 : 4)
-            );
-        }
-        
-        // Оптимизация отрисовки еды
-        if (this.food) {
-            const foodX = this.food.x * this.tileSize + this.tileSize / 2;
-            const foodY = this.food.y * this.tileSize + this.tileSize / 2;
-            
-            ctx.shadowColor = '#ff00ff';
-            ctx.shadowBlur = isLargeGrid ? 4 : 8;
-            ctx.fillStyle = isLargeGrid ? '#ff00ff' : this.foodGradient;
-            
-            ctx.beginPath();
-            ctx.arc(foodX, foodY, this.tileSize / (isLargeGrid ? 4 : 3), 0, Math.PI * 2);
-            ctx.fill();
-        }
-        
-        // Оптимизация отрисовки специальных сфер
-        ctx.shadowBlur = isLargeGrid ? 4 : 8;
-        for (const orb of this.specialOrbs) {
-            const orbType = this.specialOrbTypes.find(type => type.type === orb.type);
-            if (!orbType) continue;
-            
-            const orbX = orb.x * this.tileSize + this.tileSize / 2;
-            const orbY = orb.y * this.tileSize + this.tileSize / 2;
-            
-            ctx.shadowColor = orbType.color;
-            ctx.fillStyle = isLargeGrid ? orbType.color : orbType.gradient;
-            
-            if (orbType.type === 'crystal' && !isLargeGrid) {
-                const size = this.tileSize / 2;
-                ctx.save();
-                ctx.translate(orbX, orbY);
-                ctx.rotate(Math.PI / 4);
-                ctx.fillRect(-size/2, -size/2, size, size);
-                ctx.restore();
-            } else {
-                ctx.beginPath();
-                ctx.arc(orbX, orbY, this.tileSize / (isLargeGrid ? 4 : 3), 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-        
-        ctx.shadowBlur = 0;
-    }
-    
-    watchAdForRevive() {
-        if (this.adRevivalsUsed >= this.maxAdRevivals) {
-            console.log('No more ad revivals available');
-            return;
-        }
-        
-        // Increment the ad revival counter and save to localStorage
-        this.adRevivalsUsed++;
-        localStorage.setItem('snakeAdRevivals', this.adRevivalsUsed.toString());
-        
-        // Select a random ad video ID
-        const randomAdIndex = Math.floor(Math.random() * this.adVideoIds.length);
-        const videoId = this.adVideoIds[randomAdIndex];
-        
-        // Store game state before opening ad
-        this.gameRunning = false;
-        this.pendingAdRevival = true;
-        
-        // Cancel any existing animation frame
-        if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
-        
-        // Create a modal to inform the user
-        this.adModal = document.createElement('div');
-        this.adModal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-            color: white;
-            font-family: 'Press Start 2P', cursive;
-        `;
-        
-        const adText = document.createElement('div');
-        adText.textContent = 'ПРОСМОТР РЕКЛАМЫ';
-        adText.style.cssText = `
-            margin-bottom: 20px;
-            font-size: 24px;
-            color: #FF8C00;
-            text-shadow: 0 0 10px rgba(255, 140, 0, 0.5);
-        `;
-        
-        const adInfo = document.createElement('div');
-        adInfo.textContent = 'Пожалуйста, посмотрите рекламу полностью для возрождения.';
-        adInfo.style.fontSize = '14px';
-        adInfo.style.marginBottom = '20px';
-        adInfo.style.textAlign = 'center';
-        
-        // Show remaining ad revivals
-        const revivals = document.createElement('div');
-        revivals.textContent = `Осталось возрождений за рекламу: ${this.maxAdRevivals - this.adRevivalsUsed} из ${this.maxAdRevivals}`;
-        revivals.style.fontSize = '12px';
-        revivals.style.marginBottom = '20px';
-        revivals.style.color = '#FF8C00';
-        
-        // Create a container for the YouTube player
-        const playerContainer = document.createElement('div');
-        playerContainer.id = 'playerContainer';
-        playerContainer.style.cssText = `
-            width: 80%;
-            height: 60%;
-            max-width: 800px;
-            max-height: 600px;
-            margin-bottom: 20px;
-            border: 2px solid #FF8C00;
-            position: relative;
-            background: #000;
-        `;
-        
-        // Create a div for the YouTube player
-        const playerDiv = document.createElement('div');
-        playerDiv.id = 'youtubePlayer';
-        playerDiv.style.cssText = `
-            width: 100%;
-            height: 100%;
-        `;
-        playerContainer.appendChild(playerDiv);
-        
-        // Create timer display
-        const timerDisplay = document.createElement('div');
-        timerDisplay.id = 'timerDisplay';
-        timerDisplay.style.cssText = `
-            margin-top: 10px;
-            font-size: 14px;
-            color: #FF8C00;
-        `;
-        timerDisplay.textContent = 'Загрузка видео...';
-        
-        // Create continue button (initially disabled)
-        const continueButton = document.createElement('button');
-        continueButton.id = 'continueButton';
-        continueButton.textContent = 'ПРОДОЛЖИТЬ ИГРУ';
-        continueButton.style.cssText = `
-            margin-top: 20px;
-            padding: 15px 30px;
-            font-family: 'Press Start 2P', cursive;
-            font-size: 14px;
-            background: #333;
-            border: 2px solid #666;
-            color: #666;
-            cursor: not-allowed;
-            transition: all 0.3s;
-            border-radius: 5px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        `;
-        continueButton.disabled = true;
-        
-        // Set up continue button click handler
-        continueButton.onclick = () => {
-            if (!continueButton.disabled) {
-                // Complete the revival process
-                this.completeAdRevival();
-            }
-        };
-        
-        // Add elements to modal
-        this.adModal.appendChild(adText);
-        this.adModal.appendChild(adInfo);
-        this.adModal.appendChild(revivals);
-        this.adModal.appendChild(playerContainer);
-        this.adModal.appendChild(timerDisplay);
-        this.adModal.appendChild(continueButton);
-        
-        // Add modal to page
-        document.body.appendChild(this.adModal);
-        
-        // Create YouTube player
-        if (typeof YT !== 'undefined' && YT.Player) {
-            this.createYouTubePlayer(videoId);
-        } else {
-            // If YouTube API is not loaded yet, wait for it
-            window.onYouTubeIframeAPIReady = () => {
-                this.createYouTubePlayer(videoId);
-            };
-        }
-    }
-    
-    createYouTubePlayer(videoId) {
-        // Create the YouTube player
-        this.youtubePlayer = new YT.Player('youtubePlayer', {
-            height: '100%',
-            width: '100%',
-            videoId: videoId,
-            playerVars: {
-                'autoplay': 1,
-                'controls': 0,
-                'disablekb': 1,
-                'fs': 0,
-                'modestbranding': 1,
-                'rel': 0,
-                'showinfo': 0
-            },
-            events: {
-                'onReady': this.onPlayerReady,
-                'onStateChange': this.onPlayerStateChange
-            }
-        });
-        
-        // Update timer display
-        const timerDisplay = this.adModal.querySelector('#timerDisplay');
-        if (timerDisplay) {
-            timerDisplay.textContent = 'Просмотр рекламы...';
-        }
-    }
-    
-    completeAdRevival() {
-        console.log('Completing ad revival');
-        
-        // Only proceed if we're still waiting for revival
-        if (!this.pendingAdRevival) return;
-        
-        // Reset the pending flag
-        this.pendingAdRevival = false;
-        
-        // Stop and destroy the YouTube player if it exists
-        if (this.youtubePlayer) {
-            try {
-                this.youtubePlayer.stopVideo();
-                this.youtubePlayer.destroy();
-                this.youtubePlayer = null;
-            } catch (e) {
-                console.log('Error stopping YouTube player', e);
-            }
-        }
-        
-        // Remove the modal if it exists
-        if (this.adModal && this.adModal.parentNode) {
-            document.body.removeChild(this.adModal);
-            this.adModal = null;
-        }
-        
-        // Hide game over screen
-        this.gameOverElement.style.display = 'none';
-        
-        // Revive the player
-        this.reviveAfterAd();
-    }
-    
-    reviveAfterAd() {
-        console.log('Reviving after ad');
-        
-        // Store current score
-        const currentScore = this.score;
-        
-        // Reset game state but keep score
-        this.gameOver = false;
-        
-        // Keep the original snake length
-        const snakeLength = this.snake.length;
-        this.snake = [];
-        
-        // Create new snake at starting position with original length
-        for (let i = 0; i < snakeLength; i++) {
-            this.snake.push({
-                x: this.startPosition.x - i,
-                y: this.startPosition.y
-            });
-        }
-        
-        // Reset direction
-        this.direction = 'right';
-        this.nextDirection = 'right';
-        
-        // Keep the current speed (don't reset moveInterval)
-        
-        // Generate new food
-        this.food = this.generateFood();
-        
-        // Reset animation and timing
-        this.previousPositions = this.snake.map(segment => ({ ...segment }));
-        this.animationProgress = 0;
-        this.lastMoveTime = performance.now();
-        this.lastRenderTime = performance.now();
-        
-        // Restore score
-        this.score = currentScore;
+
+    updateScore() {
         this.scoreElement.textContent = this.score;
-        
-        // Resume game with a slight delay to ensure everything is ready
-        setTimeout(() => {
-            console.log('Resuming game after ad with original length: ' + snakeLength);
-            this.gameRunning = true;
-            
-            // Start a new game loop
-            this.startGameLoop();
-        }, 500);
-    }
-    
-    startGameLoop() {
-        console.log('Starting game loop');
-        
-        // Cancel any existing animation frame
-        if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId);
+        if (this.score > this.highScore) {
+            this.highScore = this.score;
+            this.highScoreElement.textContent = this.highScore;
+            localStorage.setItem('snakeHighScore', this.highScore.toString());
         }
-        
-        // Reset timing
-        this.lastRenderTime = performance.now();
-        
-        // Start the game loop
-        this.animationFrameId = requestAnimationFrame(this.gameLoop);
     }
 
-    gameLoop(currentTime) {
-        if (!this.initialized || !this.gameRunning) return;
-        
-        this.animationFrameId = requestAnimationFrame(this.gameLoop);
-        
-        const elapsed = currentTime - this.lastRenderTime;
-        
-        // Оптимизация для плавности
-        if (elapsed < this.fpsInterval) return;
-        
-        this.lastRenderTime = currentTime - (elapsed % this.fpsInterval);
-        
-        // Обновляем состояние игры
-        this.update(currentTime);
-        
-        // Отрисовываем текущий кадр
-        this.draw();
-    }
+    initializeControls() {
+        // Keyboard controls
+        document.addEventListener('keydown', e => {
+            e.preventDefault(); // Prevent page scrolling
+            this.handleKeyPress(e.key);
+        });
 
-    restart() {
-        // Всегда сбрасываем счетчики при полном рестарте
-        this.adRevivalsUsed = 0;
-        localStorage.setItem('snakeAdRevivals', '0'); // Reset ad counter in localStorage
-        this.deathCount = 0;
-        
-        // Cancel any existing animation frame
-        if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
-        
-        this.reset();
-        this.gameRunning = true;
-        this.startGameLoop();
-    }
-
-    createGameOverScreen() {
-        // Clear any existing game over content
-        this.gameOverElement.innerHTML = '';
-        
-        const gameOverTitle = document.createElement('div');
-        gameOverTitle.textContent = 'ИГРА ОКОНЧЕНА';
-        gameOverTitle.style.marginBottom = '20px';
-        gameOverTitle.style.fontSize = '24px';
-        
-        this.gameOverElement.appendChild(gameOverTitle);
-        
-        // Container for buttons to align them
-        const buttonsContainer = document.createElement('div');
-        buttonsContainer.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-        `;
-
-        // Add revival option if player has enough crystals
-        if (this.crystals >= 10) {
-            const reviveButton = document.createElement('button');
-            reviveButton.textContent = 'ВОЗРОДИТЬСЯ (10 КРИСТАЛЛОВ)';
-            reviveButton.style.cssText = `
-                margin: 5px;
-                padding: 15px 30px;
-                font-family: 'Press Start 2P', cursive;
-                font-size: 14px;
-                background: #9932CC;
-                border: 2px solid #9932CC;
-                color: #fff;
-                cursor: pointer;
-                transition: all 0.3s;
-                border-radius: 5px;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                width: 100%;
-            `;
-            
-            reviveButton.onmouseover = () => {
-                reviveButton.style.background = '#B041FF';
-                reviveButton.style.transform = 'translateY(-2px)';
-                reviveButton.style.boxShadow = '0 5px 15px rgba(153, 50, 204, 0.5)';
-            };
-            
-            reviveButton.onmouseout = () => {
-                reviveButton.style.background = '#9932CC';
-                reviveButton.style.transform = 'translateY(0)';
-                reviveButton.style.boxShadow = 'none';
-            };
-            
-            reviveButton.onclick = () => {
-                this.revive();
-            };
-            
-            buttonsContainer.appendChild(reviveButton);
-        } else {
-            const crystalInfo = document.createElement('div');
-            crystalInfo.textContent = `Вам нужно еще ${10 - this.crystals} кристаллов для возрождения`;
-            crystalInfo.style.cssText = `
-                color: #9932CC;
-                margin: 5px;
-                font-size: 12px;
-            `;
-            buttonsContainer.appendChild(crystalInfo);
-        }
-        
-        // Reset ad revivals counter if this is a new game session
-        if (this.deathCount === 0) {
-            this.adRevivalsUsed = 0;
-            localStorage.setItem('snakeAdRevivals', '0');
-        }
-        
-        // Add watch ad button if ad revivals are still available
-        if (this.adRevivalsUsed < this.maxAdRevivals) {
-            const adButton = document.createElement('button');
-            adButton.textContent = `ВОЗРОДИТЬСЯ (СМОТРЕТЬ РЕКЛАМУ) - ${this.maxAdRevivals - this.adRevivalsUsed} из ${this.maxAdRevivals}`;
-            adButton.style.cssText = `
-                margin: 5px;
-                padding: 15px 30px;
-                font-family: 'Press Start 2P', cursive;
-                font-size: 14px;
-                background: #FF8C00;
-                border: 2px solid #FF8C00;
-                color: #fff;
-                cursor: pointer;
-                transition: all 0.3s;
-                border-radius: 5px;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                width: 100%;
-            `;
-            
-            adButton.onmouseover = () => {
-                adButton.style.background = '#FFA500';
-                adButton.style.transform = 'translateY(-2px)';
-                adButton.style.boxShadow = '0 5px 15px rgba(255, 140, 0, 0.5)';
-            };
-            
-            adButton.onmouseout = () => {
-                adButton.style.background = '#FF8C00';
-                adButton.style.transform = 'translateY(0)';
-                adButton.style.boxShadow = 'none';
-            };
-            
-            adButton.onclick = () => {
-                this.watchAdForRevive();
-            };
-            
-            buttonsContainer.appendChild(adButton);
-        } else {
-            const adInfo = document.createElement('div');
-            adInfo.textContent = 'Лимит возрождений за рекламу исчерпан';
-            adInfo.style.cssText = `
-                color: #FF8C00;
-                margin: 5px;
-                font-size: 12px;
-            `;
-            buttonsContainer.appendChild(adInfo);
-        }
-        
-        // Add retry button
-        const retryButton = document.createElement('button');
-        retryButton.textContent = 'НАЧАТЬ ЗАНОВО';
-        retryButton.style.cssText = `
-            margin: 5px;
-            padding: 15px 30px;
-            font-family: 'Press Start 2P', cursive;
-            font-size: 16px;
-            background: transparent;
-            border: 2px solid #ff0066;
-            color: #ff0066;
-            cursor: pointer;
-            transition: all 0.3s;
-            border-radius: 5px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            width: 100%;
-        `;
-        
-        retryButton.onmouseover = () => {
-            retryButton.style.background = '#ff0066';
-            retryButton.style.color = '#000';
-            retryButton.style.transform = 'translateY(-2px)';
-            retryButton.style.boxShadow = '0 5px 15px rgba(255, 0, 102, 0.5)';
-        };
-        
-        retryButton.onmouseout = () => {
-            retryButton.style.background = 'transparent';
-            retryButton.style.color = '#ff0066';
-            retryButton.style.transform = 'translateY(0)';
-            retryButton.style.boxShadow = 'none';
-        };
-        
-        retryButton.onclick = () => {
-            this.adRevivalsUsed = 0;
-            localStorage.setItem('snakeAdRevivals', '0');
-            this.deathCount = 0;
-            this.restart();
-        };
-        
-        buttonsContainer.appendChild(retryButton);
-        this.gameOverElement.appendChild(buttonsContainer);
-    }
-    
-    revive() {
-        // Spend crystals
-        this.crystals -= 10;
-        localStorage.setItem('snakeCrystals', this.crystals);
-        this.crystalElement.textContent = `КРИСТАЛЛЫ: ${this.crystals}`;
-        
-        // Store current score
-        const currentScore = this.score;
-        
-        // Reset game state but keep score
-        this.gameOver = false;
-        this.gameOverElement.style.display = 'none';
-        
-        // Reset snake to initial length (3 segments)
-        this.snake = [];
-        for (let i = 0; i < 3; i++) {
-            this.snake.push({
-                x: this.startPosition.x - i,
-                y: this.startPosition.y
-            });
-        }
-        
-        // Reset direction
-        this.direction = 'right';
-        this.nextDirection = 'right';
-        
-        // Reset speed to initial value
-        this.moveInterval = this.baseInterval;
-        
-        // Generate new food
-        this.food = this.generateFood();
-        
-        // Reset animation and timing
-        this.previousPositions = this.snake.map(segment => ({ ...segment }));
-        this.animationProgress = 0;
-        this.lastMoveTime = performance.now();
-        
-        // Restore score
-        this.score = currentScore;
-        this.scoreElement.textContent = this.score;
-        
-        // Resume game
-        this.gameRunning = true;
-        this.startGameLoop();
-    }
-
-    setupMobileControls() {
-        // Setup mobile button controls
+        // Mobile controls
         const buttons = {
-            'btnUp': 'up',
-            'btnDown': 'down',
-            'btnLeft': 'left',
-            'btnRight': 'right'
+            'btnUp': { x: 0, y: -1 },
+            'btnDown': { x: 0, y: 1 },
+            'btnLeft': { x: -1, y: 0 },
+            'btnRight': { x: 1, y: 0 }
         };
 
-        // Создаем контейнер для мобильного управления вне game-container
-        this.mobileControls = document.querySelector('.mobile-controls');
-
-        Object.entries(buttons).forEach(([id, direction]) => {
-            const button = document.getElementById(id);
+        Object.keys(buttons).forEach(btnId => {
+            const button = document.getElementById(btnId);
             if (button) {
-                // Добавляем обработчики для всех типов событий
-                ['touchstart', 'touchend', 'touchcancel'].forEach(eventType => {
+                ['touchstart', 'mousedown'].forEach(eventType => {
                     button.addEventListener(eventType, (e) => {
                         e.preventDefault();
-                        if (eventType === 'touchstart') {
-                            // Визуальный эффект при нажатии
-                            button.style.transform = 'scale(0.95)';
-                            button.style.background = 'rgba(0, 255, 255, 0.4)';
-                            this.handleDirectionChange(direction);
-                        } else {
-                            // Возвращаем исходный вид при отпускании
-                            button.style.transform = 'scale(1)';
-                            button.style.background = 'rgba(0, 255, 255, 0.15)';
+                        const newDir = buttons[btnId];
+                        if (this.isValidDirection(newDir)) {
+                            this.nextDirection = newDir;
                         }
                     });
                 });
             }
         });
-
-        // Обработчик для скрытия/показа управления при game over
-        const gameOverObserver = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.target.style.display === 'block') {
-                    // Прячем управление при game over
-                    this.mobileControls.style.display = 'none';
-                } else if (mutation.target.style.display === 'none') {
-                    // Показываем управление при возобновлении игры
-                    if (window.innerWidth <= 768) {
-                        this.mobileControls.style.display = 'block';
-                    }
-                }
-            });
-        });
-
-        // Начинаем наблюдение за изменениями экрана game over
-        gameOverObserver.observe(this.gameOverElement, {
-            attributes: true,
-            attributeFilter: ['style']
-        });
     }
 
-    setupTouchControls() {
-        // Setup swipe controls
-        this.touchStartX = null;
-        this.touchStartY = null;
-        this.touchStartTime = null;
-        this.swipeIndicator = null;
-        
-        // Создаем индикатор свайпа
-        this.createSwipeIndicator();
-
-        this.canvas.addEventListener('touchstart', (e) => {
-            if (this.gameOver) return; // Игнорируем свайпы при game over
-            
-            e.preventDefault();
-            const touch = e.touches[0];
-            this.touchStartX = touch.clientX;
-            this.touchStartY = touch.clientY;
-            this.touchStartTime = Date.now();
-            
-            // Показываем индикатор свайпа
-            if (this.swipeIndicator) {
-                this.swipeIndicator.style.left = `${touch.clientX}px`;
-                this.swipeIndicator.style.top = `${touch.clientY}px`;
-                this.swipeIndicator.style.opacity = '1';
-            }
-        });
-
-        this.canvas.addEventListener('touchmove', (e) => {
-            if (this.gameOver) return; // Игнорируем свайпы при game over
-            
-            e.preventDefault();
-            if (!this.touchStartX || !this.touchStartY) return;
-
-            const touch = e.touches[0];
-            const deltaX = touch.clientX - this.touchStartX;
-            const deltaY = touch.clientY - this.touchStartY;
-            
-            // Обновляем позицию индикатора свайпа
-            if (this.swipeIndicator) {
-                const angle = Math.atan2(deltaY, deltaX);
-                const distance = Math.min(Math.sqrt(deltaX * deltaX + deltaY * deltaY), 50);
-                const translateX = Math.cos(angle) * distance;
-                const translateY = Math.sin(angle) * distance;
-                
-                this.swipeIndicator.style.transform = `translate(${translateX}px, ${translateY}px)`;
-                
-                // Добавляем направляющую линию
-                this.swipeIndicator.style.background = `
-                    linear-gradient(${angle}rad, 
-                    rgba(0, 255, 255, 0.4), 
-                    rgba(0, 255, 255, 0.1))
-                `;
-            }
-
-            // Определяем направление свайпа на лету для более быстрой реакции
-            const minSwipeDistance = 15; // Уменьшенное минимальное расстояние для свайпа
-            
-            if (Math.abs(deltaX) > minSwipeDistance || Math.abs(deltaY) > minSwipeDistance) {
-                if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                    // Горизонтальный свайп
-                    if (deltaX > 0) {
-                        this.handleDirectionChange('right');
-                    } else {
-                        this.handleDirectionChange('left');
-                    }
-                } else {
-                    // Вертикальный свайп
-                    if (deltaY > 0) {
-                        this.handleDirectionChange('down');
-                    } else {
-                        this.handleDirectionChange('up');
-                    }
-                }
-                
-                // Обновляем начальную позицию для следующего свайпа
-                this.touchStartX = touch.clientX;
-                this.touchStartY = touch.clientY;
-            }
-        });
-
-        this.canvas.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            
-            // Скрываем индикатор свайпа
-            if (this.swipeIndicator) {
-                this.swipeIndicator.style.opacity = '0';
-                this.swipeIndicator.style.transform = 'translate(0, 0)';
-                this.swipeIndicator.style.background = 'rgba(0, 255, 255, 0.2)';
-            }
-
-            this.touchStartX = null;
-            this.touchStartY = null;
-            this.touchStartTime = null;
-        });
+    isValidDirection(newDir) {
+        // Prevent 180-degree turns
+        return !(this.direction.x === -newDir.x && this.direction.y === -newDir.y);
     }
 
-    createSwipeIndicator() {
-        // Создаем визуальный индикатор свайпа
-        this.swipeIndicator = document.createElement('div');
-        this.swipeIndicator.style.cssText = `
-            position: fixed;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: rgba(0, 255, 255, 0.2);
-            border: 2px solid rgba(0, 255, 255, 0.5);
-            pointer-events: none;
-            transition: opacity 0.3s;
-            opacity: 0;
-            z-index: 1000;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
-            backdrop-filter: blur(5px);
-        `;
-        document.body.appendChild(this.swipeIndicator);
-    }
-
-    handleDirectionChange(newDirection) {
-        const currentTime = performance.now();
-        if (currentTime - this.lastInputTime < 30) {
-            return;
-        }
-
-        const opposites = {
-            'up': 'down',
-            'down': 'up',
-            'left': 'right',
-            'right': 'left'
+    handleKeyPress(key) {
+        const directions = {
+            'ArrowUp': { x: 0, y: -1 },
+            'ArrowDown': { x: 0, y: 1 },
+            'ArrowLeft': { x: -1, y: 0 },
+            'ArrowRight': { x: 1, y: 0 }
         };
 
-        // Если это противоположное направление текущему, игнорируем
-        if (opposites[newDirection] === this.direction) {
-            return;
-        }
-
-        this.lastInputTime = currentTime;
-        
-        // Немедленно меняем направление, если змейка не в процессе движения
-        if (this.animationProgress < 0.3) {
+        const newDirection = directions[key];
+        if (newDirection && this.isValidDirection(newDirection)) {
             this.nextDirection = newDirection;
-            this.inputBuffer = null;
+        }
+    }
+
+    showGameOver() {
+        this.gameOver = true;
+        
+        // Update final scores
+        document.getElementById('finalScore').textContent = this.score;
+        document.getElementById('finalHighScore').textContent = this.highScore;
+        document.getElementById('finalCrystals').textContent = this.crystals;
+        
+        // Show game over screen with animation
+        const gameOverElement = document.getElementById('gameOver');
+        gameOverElement.style.display = 'block';
+        
+        // Clear existing buttons
+        const buttonsContainer = gameOverElement.querySelector('.buttons');
+        buttonsContainer.innerHTML = '';
+        
+        // Add revival button for crystals
+        const reviveButton = document.createElement('button');
+        reviveButton.className = 'retry-btn revival-btn';
+        reviveButton.innerHTML = '<i class="fas fa-gem"></i> Возродиться за 10 кристаллов';
+        
+        if (this.crystals >= 10) {
+            reviveButton.onclick = () => this.revive('crystal');
+            reviveButton.disabled = false;
         } else {
-            // Сохраняем ввод в буфер только если это не противоположное направление
-            if (!this.inputBuffer || opposites[newDirection] !== this.inputBuffer) {
-                this.inputBuffer = newDirection;
+            reviveButton.disabled = true;
+            reviveButton.style.opacity = '0.5';
+        }
+        
+        // Add revival button for ads with remaining count
+        const adRevivals = parseInt(localStorage.getItem('adRevivals')) || 3;
+        const adReviveButton = document.createElement('button');
+        adReviveButton.className = 'retry-btn ad-revival-btn';
+        adReviveButton.style.cssText = 'background-color: #ff8c00 !important; margin-bottom: 5px;';
+        adReviveButton.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                <div><i class="fas fa-play"></i> Возродиться за рекламу</div>
+                <div style="font-size: 12px; opacity: 0.8;">Осталось: ${adRevivals} из 3</div>
+            </div>`;
+        
+        if (adRevivals > 0) {
+            adReviveButton.onclick = () => this.revive('ad');
+            adReviveButton.disabled = false;
+        } else {
+            adReviveButton.disabled = true;
+            adReviveButton.style.opacity = '0.5';
+        }
+        
+        // Add retry button
+        const retryButton = document.createElement('button');
+        retryButton.className = 'retry-btn';
+        retryButton.innerHTML = '<i class="fas fa-redo"></i> Начать заново';
+        retryButton.onclick = () => window.location.reload();
+        
+        // Add menu button
+        const menuButton = document.createElement('button');
+        menuButton.className = 'menu-btn';
+        menuButton.innerHTML = '<i class="fas fa-home"></i> В меню';
+        menuButton.onclick = () => window.location.href = 'index.html';
+        
+        // Add all elements to container
+        buttonsContainer.appendChild(reviveButton);
+        buttonsContainer.appendChild(adReviveButton);
+        buttonsContainer.appendChild(retryButton);
+        buttonsContainer.appendChild(menuButton);
+    }
+
+    revive(type) {
+        if (type === 'crystal' && this.crystals >= 10) {
+            this.crystals -= 10;
+            this.updateCrystalCounter();
+            this.continueGame();
+        } else if (type === 'ad') {
+            let adRevivals = parseInt(localStorage.getItem('adRevivals')) || 3;
+            if (adRevivals > 0) {
+                this.showAdModal();
             }
         }
     }
 
-    resizeCanvas() {
-        const isMobile = window.innerWidth <= 768;
-        if (isMobile) {
-            const size = Math.min(window.innerWidth - 40, window.innerHeight - 200);
-            this.canvas.style.width = `${size}px`;
-            this.canvas.style.height = `${size}px`;
-        } else {
-            this.canvas.style.width = '400px';
-            this.canvas.style.height = '400px';
+    continueGame() {
+        this.gameOver = false;
+        this.gameOverElement.style.display = 'none';
+        // Reset snake position but keep length and score
+        const head = this.snake[0];
+        this.snake = [
+            {x: Math.floor(this.gridSize/2), y: Math.floor(this.gridSize/2)},
+            {x: Math.floor(this.gridSize/2)-1, y: Math.floor(this.gridSize/2)},
+            {x: Math.floor(this.gridSize/2)-2, y: Math.floor(this.gridSize/2)}
+        ];
+        this.direction = {x: 1, y: 0};
+        this.food = this.generateFood();
+        this.crystal = this.generateCrystal();
+        this.gameLoop();
+    }
+
+    createMenuButton() {
+        // First, remove ALL existing menu buttons
+        const existingButtons = document.querySelectorAll('.menu-button, .back-button');
+        existingButtons.forEach(button => {
+            button.parentNode.removeChild(button);
+        });
+
+        // Create new menu button
+        const menuButton = document.createElement('button');
+        
+        // Set class and styles
+        menuButton.className = 'menu-button';
+        if (window.innerWidth <= 768) {
+            menuButton.classList.add('mobile-menu');
+        }
+        
+        menuButton.innerHTML = `
+            <i class="fas fa-bars"></i>
+            <span>Меню</span>
+        `;
+        
+        menuButton.addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+
+        // Add button to document
+        document.body.appendChild(menuButton);
+
+        // Update button position on window resize
+        window.addEventListener('resize', () => {
+            if (window.innerWidth <= 768) {
+                menuButton.classList.add('mobile-menu');
+            } else {
+                menuButton.classList.remove('mobile-menu');
+            }
+        });
+    }
+
+    createCrystalCounter() {
+        const counter = document.createElement('div');
+        counter.className = 'crystal-counter';
+        counter.innerHTML = `
+            <i class="fas fa-gem"></i>
+            <span>0</span>
+        `;
+        document.body.appendChild(counter);
+        return counter;
+    }
+
+    updateCrystalCounter() {
+        if (!this.crystalCounter) {
+            this.crystalCounter = document.querySelector('.crystal-counter');
+            if (!this.crystalCounter) {
+                this.crystalCounter = this.createCrystalCounter();
+            }
+        }
+        const counterSpan = this.crystalCounter.querySelector('span');
+        if (counterSpan) {
+            counterSpan.textContent = this.crystals;
+            // Save crystals to localStorage
+            localStorage.setItem('snakeCrystals', this.crystals.toString());
         }
     }
-}
 
-// Start the game
-const game = new SnakeGame(); 
+    createAdModal() {
+        // Instead of creating a new modal, get the existing one
+        this.adModal = document.querySelector('.ad-modal');
+        if (!this.adModal) {
+            console.error('Ad modal not found in HTML');
+            return;
+        }
+
+        // No need to initialize YouTube player here as it's handled in game.html
+    }
+
+    showAdModal() {
+        if (!this.adModal) {
+            console.error('Ad modal not initialized');
+            return;
+        }
+
+        this.adModal.style.display = 'flex';
+        const continueBtn = this.adModal.querySelector('.continue-btn');
+        const timer = this.adModal.querySelector('.ad-timer');
+
+        // Hide timer as we don't need it anymore
+        if (timer) timer.style.display = 'none';
+
+        // Reset continue button
+        continueBtn.disabled = true;
+        continueBtn.style.opacity = '0.5';
+
+        // Start playing a random video if player is ready
+        if (window.player && typeof window.player.playVideo === 'function') {
+            const randomVideoId = adVideos[Math.floor(Math.random() * adVideos.length)];
+            window.player.loadVideoById({
+                videoId: randomVideoId
+            });
+            window.player.playVideo();
+        } else {
+            console.log('YouTube player not ready');
+            // If player is not ready, allow continuing without ad
+            continueBtn.disabled = false;
+            continueBtn.style.opacity = '1';
+        }
+
+        // Add one-time click event listener to continue button
+        continueBtn.addEventListener('click', () => {
+            if (window.player && typeof window.player.stopVideo === 'function') {
+                window.player.stopVideo();
+            }
+            let adRevivals = parseInt(localStorage.getItem('adRevivals')) || 3;
+            adRevivals--;
+            localStorage.setItem('adRevivals', adRevivals);
+            document.getElementById('adRevivalsLeft').textContent = adRevivals;
+            this.adModal.style.display = 'none';
+            this.continueGame();
+        }, { once: true });
+    }
+
+    // Smooth interpolation functions
+    lerp(start, end, t) {
+        return start * (1 - t) + end * t;
+    }
+
+    smoothStep(t) {
+        return t * t * (3 - 2 * t);
+    }
+
+    bezierPoint(p0, p1, p2, p3, t) {
+        const oneMinusT = 1 - t;
+        return Math.pow(oneMinusT, 3) * p0 +
+               3 * Math.pow(oneMinusT, 2) * t * p1 +
+               3 * oneMinusT * Math.pow(t, 2) * p2 +
+               Math.pow(t, 3) * p3;
+    }
+} 
