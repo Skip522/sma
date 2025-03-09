@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game - Главное меню</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Russo+One&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #00ffff;
+            --secondary: #9932CC;
+            --background: #0f0f1f;
+            --text: #ffffff;
+            --gradient-1: linear-gradient(135deg, #00ffff, #0099ff);
+            --gradient-2: linear-gradient(135deg, #9932CC, #ff66ff);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, var(--background), #1a1a2f);
+            color: var(--text);
+            font-family: 'Russo One', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 20%, rgba(0, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(153, 50, 204, 0.1) 0%, transparent 50%),
+                repeating-linear-gradient(45deg, rgba(0, 255, 255, 0.02) 0%, rgba(0, 255, 255, 0.02) 1px, transparent 1px, transparent 10px);
+            pointer-events: none;
+            animation: backgroundPulse 8s ease-in-out infinite;
+        }
+
+        @keyframes backgroundPulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .menu-container {
+            background: rgba(15, 15, 31, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(0, 255, 255, 0.1);
+            text-align: center;
+            min-width: 320px;
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.1),
+                        inset 0 0 20px rgba(0, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            transform: translateY(0);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            animation: containerFloat 3s ease-in-out infinite;
+        }
+
+        @keyframes containerFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .menu-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, 
+                transparent, 
+                rgba(0, 255, 255, 0.3), 
+                transparent
+            );
+            animation: borderGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes borderGlow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+
+        .title {
+            font-family: 'Press Start 2P', cursive;
+            color: var(--text);
+            font-size: 32px;
+            margin-bottom: 40px;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5),
+                         0 0 40px rgba(0, 255, 255, 0.3);
+            position: relative;
+            display: inline-block;
+            letter-spacing: 2px;
+            animation: titlePulse 2s ease-in-out infinite;
+        }
+
+        .title::before {
+            content: '🎮';
+            font-size: 24px;
+            position: absolute;
+            left: -40px;
+            top: 50%;
+            transform: translateY(-50%);
+            animation: iconFloat 2s ease-in-out infinite;
+        }
+
+        .title::after {
+            content: '🎮';
+            font-size: 24px;
+            position: absolute;
+            right: -40px;
+            top: 50%;
+            transform: translateY(-50%) scaleX(-1);
+            animation: iconFloat 2s ease-in-out infinite reverse;
+        }
+
+        @keyframes iconFloat {
+            0%, 100% { transform: translateY(-50%); }
+            50% { transform: translateY(-60%); }
+        }
+
+        .player-info {
+            background: rgba(0, 255, 255, 0.05);
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(0, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+            animation: infoPulse 4s ease-in-out infinite;
+        }
+
+        .player-id {
+            color: var(--primary);
+            font-size: 20px;
+            margin-bottom: 15px;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+            letter-spacing: 1px;
+        }
+
+        .player-id::before {
+            content: '\f007';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            margin-right: 10px;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .games-played {
+            color: #6495ED;
+            font-size: 16px;
+            text-shadow: 0 0 10px rgba(100, 149, 237, 0.5);
+            letter-spacing: 1px;
+        }
+
+        .games-played::before {
+            content: '\f091';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            margin-right: 10px;
+            color: gold;
+        }
+
+        .map-selection {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .map-button {
+            background: rgba(0, 255, 255, 0.05);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            color: var(--text);
+            padding: 25px;
+            font-family: 'Russo One', sans-serif;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-radius: 12px;
+            text-transform: uppercase;
+            position: relative;
+            overflow: hidden;
+            letter-spacing: 1px;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .map-button::before {
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+        }
+
+        .map-button[data-size="10"]::before { content: '\f6d9'; }
+        .map-button[data-size="20"]::before { content: '\f6d7'; }
+        .map-button[data-size="40"]::before { content: '\f279'; }
+
+        .map-button:hover {
+            background: rgba(0, 255, 255, 0.15);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 5px 20px rgba(0, 255, 255, 0.3);
+            text-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+            letter-spacing: 2px;
+        }
+
+        .crystals {
+            color: var(--secondary);
+            font-size: 18px;
+            margin-top: 30px;
+            text-shadow: 0 0 15px rgba(153, 50, 204, 0.5);
+            position: relative;
+            display: inline-block;
+            padding: 15px 30px;
+            background: rgba(153, 50, 204, 0.1);
+            border-radius: 15px;
+            border: 1px solid rgba(153, 50, 204, 0.2);
+            letter-spacing: 1px;
+            animation: crystalsPulse 3s ease-in-out infinite;
+        }
+
+        .crystals::before {
+            content: '\f3a5';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            margin-right: 10px;
+            background: var(--gradient-2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: crystalSpin 3s ease-in-out infinite;
+        }
+
+        @keyframes crystalSpin {
+            0% { transform: rotate(0deg); }
+            25% { transform: rotate(20deg); }
+            75% { transform: rotate(-20deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        @media (max-width: 768px) {
+            .title::before, .title::after {
+                display: none;
+            }
+
+            .menu-container {
+                width: 85%;
+                padding: 30px 20px;
+                margin: 20px;
+            }
+
+            .title {
+                font-size: 26px;
+            }
+
+            .map-button {
+                font-size: 14px;
+                padding: 20px;
+            }
+
+            .player-id {
+                font-size: 18px;
+            }
+
+            .games-played {
+                font-size: 14px;
+            }
+
+            .crystals {
+                font-size: 16px;
+                padding: 12px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="menu-container">
+        <div class="title">SNAKE GAME</div>
+        
+        <div class="player-info">
+            <div class="player-id">ID: ----</div>
+            <div class="games-played">Игр сыграно: 0</div>
+        </div>
+
+        <div class="map-selection">
+            <button class="map-button" data-size="10">Маленькая карта (10x10)</button>
+            <button class="map-button" data-size="20">Средняя карта (20x20)</button>
+            <button class="map-button" data-size="40">Большая карта (40x40)</button>
+        </div>
+
+        <div class="crystals">КРИСТАЛЛЫ: 0</div>
+    </div>
+
+    <script src="console.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Get or create player ID
+            let playerId = localStorage.getItem('snakePlayerId');
+            if (!playerId) {
+                const lastId = parseInt(localStorage.getItem('snakeLastId') || '0');
+                playerId = `P${(lastId + 1).toString().padStart(4, '0')}`;
+                localStorage.setItem('snakePlayerId', playerId);
+                localStorage.setItem('snakeLastId', (lastId + 1).toString());
+                
+                // Initialize stats
+                const initialStats = {
+                    gamesPlayed: 0,
+                    totalScore: 0,
+                    created: new Date().toISOString()
+                };
+                localStorage.setItem(`snakeStats_${playerId}`, JSON.stringify(initialStats));
+            }
+
+            // Update player info display
+            const stats = JSON.parse(localStorage.getItem(`snakeStats_${playerId}`) || '{"gamesPlayed":0}');
+            document.querySelector('.player-id').textContent = `ID: ${playerId}`;
+            document.querySelector('.games-played').textContent = `Игр сыграно: ${stats.gamesPlayed}`;
+
+            // Update crystals display
+            const crystals = localStorage.getItem('snakeCrystals') || '0';
+            document.querySelector('.crystals').textContent = `КРИСТАЛЛЫ: ${crystals}`;
+
+            // Add click handlers for map buttons
+            document.querySelectorAll('.map-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const size = button.dataset.size;
+                    localStorage.setItem('selectedMapSize', size);
+                    window.location.href = 'game.html';
+                });
+            });
+        });
+    </script>
+</body>
+</html> 
